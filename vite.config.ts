@@ -1,7 +1,20 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite';
 
-// https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
-})
+  define: {
+    // AWS Amplify の環境変数をブラウザ側で利用可能にするための設定
+    'process.env.API_KEY': JSON.stringify(process.env.API_KEY),
+    'process.env': {}
+  },
+  build: {
+    outDir: 'dist',
+    rollupOptions: {
+      input: {
+        main: './index.html',
+      },
+    },
+  },
+  server: {
+    port: 3000,
+  }
+});
