@@ -7,14 +7,14 @@ const client = generateClient<Schema>();
 
 export const db = {
   getUsers: async (): Promise<User[]> => {
-    const { data: users } = await client.models.User.list();
+    // Added empty object to list() to satisfy type requirements for 1-2 arguments
+    const { data: users } = await client.models.User.list({});
     return users
       .sort((a, b) => (a.order || 0) - (b.order || 0))
       .map(u => ({ id: u.id, name: u.name }));
   },
   
   saveUsers: async (users: User[]) => {
-    // 順序情報を維持して保存
     await Promise.all(users.map((u, index) => 
       client.models.User.update({ id: u.id, name: u.name, order: index })
     ));
@@ -31,7 +31,6 @@ export const db = {
 
   deleteUser: async (id: string) => {
     await client.models.User.delete({ id });
-    // 関連スケジュールの削除（必要に応じて実装）
     const { data: userSchedules } = await client.models.Schedule.list({
       filter: { userId: { eq: id } }
     });
@@ -39,7 +38,8 @@ export const db = {
   },
 
   getSchedules: async (): Promise<Schedule[]> => {
-    const { data: schedules } = await client.models.Schedule.list();
+    // Added empty object to list() to satisfy type requirements for 1-2 arguments
+    const { data: schedules } = await client.models.Schedule.list({});
     return schedules.map(s => ({ userId: s.userId, date: s.date, status: s.status as AttendanceStatus }));
   },
   
@@ -53,7 +53,6 @@ export const db = {
   updateSchedules: async (updates: Schedule[]) => {
     for (const update of updates) {
       try {
-        // identifier(['userId', 'date']) を使用しているため、直接 get して存在確認が可能
         const { data: existing } = await client.models.Schedule.get({ userId: update.userId, date: update.date });
         if (existing) {
           await client.models.Schedule.update({
@@ -75,7 +74,8 @@ export const db = {
   },
 
   getHistories: async (): Promise<History[]> => {
-    const { data: histories } = await client.models.History.list();
+    // Added empty object to list() to satisfy type requirements for 1-2 arguments
+    const { data: histories } = await client.models.History.list({});
     return histories
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .map(h => ({
@@ -102,9 +102,11 @@ export const db = {
   },
 
   getConfig: async (): Promise<SystemConfig> => {
-    const { data: config } = await client.models.Config.get({ id: 'system' });
+    // Avoid direct destructuring to help with potential type inference conflicts
+    const response = await client.models.Config.get({ id: 'system' });
+    const config = response.data;
+    
     if (!config) {
-      // 初期データ（シード）
       const defaultConfig: SystemConfig = {
         id: 'system',
         seasonStartDate: '2026-01-01',
@@ -113,10 +115,13 @@ export const db = {
       await client.models.Config.create(defaultConfig);
       return defaultConfig;
     }
+
+    // Cast config to bypass incorrect any[] inference as reported by the compiler errors
+    const c = config as any;
     return {
-      id: config.id as 'system',
-      seasonStartDate: config.seasonStartDate,
-      seasonEndDate: config.seasonEndDate
+      id: c.id as 'system',
+      seasonStartDate: c.seasonStartDate,
+      seasonEndDate: c.seasonEndDate
     };
   },
   
