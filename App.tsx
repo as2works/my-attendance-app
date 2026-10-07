@@ -1,72 +1,120 @@
 import React, { useState, useEffect } from 'react';
-import { ViewState, User, SystemConfig } from './types';
-import Login from './views/Login';
+import { ViewState, User, SystemConfig, GroupId, GROUP_IDS, AccessSession } from './types';
 import MainList from './views/MainList';
 import EditSchedule from './views/EditSchedule';
 import AdminDashboard from './views/AdminDashboard';
-import { db } from './services/database';
+import AccessGate from './views/AccessGate';
+import { db, setAccessToken } from './services/database';
+import { getAccessTokenFromPath, buildAccessUrl } from './services/accessPath';
 
 const App: React.FC = () => {
-  const [view, setView] = useState<ViewState>('LOGIN');
+  const [view, setView] = useState<ViewState>('MAIN');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [config, setConfig] = useState<SystemConfig | null>(null);
-  const [isAdminUser, setIsAdminUser] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [session, setSession] = useState<AccessSession | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<GroupId>(GROUP_IDS.DORM);
+  const [bootError, setBootError] = useState<string | null>(null);
+  const [isBooting, setIsBooting] = useState(true);
+
+  const isAdminUser = session?.role === 'ADMIN';
 
   useEffect(() => {
     const init = async () => {
       try {
+        await db.ensureSeed();
+
+        const token = getAccessTokenFromPath();
+        if (!token) {
+          setAccessToken(null);
+          setSession(null);
+          setView('NOT_FOUND');
+          return;
+        }
+
+        setAccessToken(token);
+        const link = await db.resolveAccessLink(token);
+        if (!link) {
+          setAccessToken(null);
+          setSession(null);
+          setView('NOT_FOUND');
+          return;
+        }
+
+        const nextSession: AccessSession = {
+          linkId: link.id,
+          role: link.role,
+          groupId: link.groupId,
+        };
+        setSession(nextSession);
+
+        if (link.role === 'ADMIN') {
+          setSelectedGroupId(GROUP_IDS.DORM);
+          setView('ADMIN');
+        } else {
+          setSelectedGroupId(link.groupId || GROUP_IDS.DORM);
+          setView('MAIN');
+        }
+
         const initialConfig = await db.getConfig();
         setConfig(initialConfig);
+
+        if (import.meta.env.DEV && link.role === 'ADMIN') {
+          const links = await db.listAccessLinks();
+          console.info(
+            '[入場URL（開発用）]',
+            links.map((item) => ({
+              role: item.role,
+              groupId: item.groupId ?? '(admin)',
+              url: buildAccessUrl(item.id),
+            }))
+          );
+        }
       } catch (err: any) {
-        console.error("Backend initialization failed:", err);
-        setError("バックエンドとの接続に失敗しました。amplify_outputs.json が正しく生成されているか、バックエンドのデプロイが完了しているか確認してください。");
+        console.error('Backend initialization failed:', err);
+        setBootError('バックエンドとの接続に失敗しました。Amplify sandbox のデプロイが完了しているか確認してください。');
+      } finally {
+        setIsBooting(false);
       }
     };
     init();
   }, []);
 
-  // Handle logout
   const handleLogout = () => {
-    setView('LOGIN');
+    setAccessToken(null);
     setCurrentUser(null);
-    setIsAdminUser(false);
+    setSession(null);
+    setSelectedGroupId(GROUP_IDS.DORM);
+    setView('LOGGED_OUT');
+    window.history.replaceState(null, '', '/');
   };
 
-  // Handle successful login
-  const handleLoginSuccess = (isAdmin: boolean) => {
-    setIsAdminUser(isAdmin);
-    if (isAdmin) {
-      setView('ADMIN');
-    } else {
-      setView('MAIN');
-    }
-  };
-
-  // Switch to edit mode for a user
   const handleEditUser = (user: User) => {
     setCurrentUser(user);
     setView('EDIT');
   };
 
-  // Refresh config after admin update
   const handleConfigUpdate = async () => {
     try {
       const updatedConfig = await db.getConfig();
       setConfig(updatedConfig);
     } catch (err) {
-      console.error("Failed to refresh config:", err);
+      console.error('Failed to refresh config:', err);
     }
   };
 
-  if (error) {
+  const handleGroupChange = (groupId: GroupId) => {
+    if (!isAdminUser) return;
+    setSelectedGroupId(groupId);
+  };
+
+  if (bootError) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
         <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full border border-rose-100 text-center">
           <i className="fas fa-exclamation-triangle text-5xl text-rose-500 mb-6"></i>
           <h2 className="text-2xl font-black text-slate-800 mb-4">接続エラー</h2>
-          <p className="text-slate-600 mb-8 leading-relaxed font-medium">{error}</p>
-          <button 
+          <p className="text-slate-600 mb-8 leading-relaxed font-medium">{bootError}</p>
+          <button
             onClick={() => window.location.reload()}
             className="w-full bg-slate-800 text-white font-bold py-4 rounded-2xl hover:bg-slate-900 transition"
           >
@@ -77,7 +125,7 @@ const App: React.FC = () => {
     );
   }
 
-  if (!config) {
+  if (isBooting || (!config && view !== 'NOT_FOUND' && view !== 'LOGGED_OUT')) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-4">
@@ -88,36 +136,45 @@ const App: React.FC = () => {
     );
   }
 
+  if (view === 'NOT_FOUND') {
+    return <AccessGate mode="not_found" />;
+  }
+
+  if (view === 'LOGGED_OUT' || !session || !config) {
+    return <AccessGate mode="logged_out" />;
+  }
+
   return (
     <div className="min-h-screen">
-      {view === 'LOGIN' && (
-        <Login onLoginSuccess={handleLoginSuccess} />
-      )}
-
       {view === 'MAIN' && (
-        <MainList 
-          onLogout={handleLogout} 
-          onEditUser={handleEditUser} 
+        <MainList
+          onLogout={handleLogout}
+          onEditUser={handleEditUser}
           config={config}
           onNavigateAdmin={() => setView('ADMIN')}
           isAdmin={isAdminUser}
+          groupId={selectedGroupId}
+          onGroupChange={handleGroupChange}
         />
       )}
 
       {view === 'EDIT' && currentUser && (
-        <EditSchedule 
-          user={currentUser} 
+        <EditSchedule
+          user={currentUser}
           config={config}
-          onBack={() => setView('MAIN')} 
+          onBack={() => setView('MAIN')}
           onLogout={handleLogout}
         />
       )}
 
-      {view === 'ADMIN' && (
-        <AdminDashboard 
+      {view === 'ADMIN' && isAdminUser && (
+        <AdminDashboard
           onLogout={handleLogout}
           onConfigUpdate={handleConfigUpdate}
           onNavigateGeneral={() => setView('MAIN')}
+          groupId={selectedGroupId}
+          onGroupChange={handleGroupChange}
+          currentLinkId={session.linkId}
         />
       )}
     </div>

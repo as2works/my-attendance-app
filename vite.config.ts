@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  appType: 'spa',
   define: {
     'process.env.API_KEY': JSON.stringify(process.env.API_KEY || ''),
     'process.env': {}
