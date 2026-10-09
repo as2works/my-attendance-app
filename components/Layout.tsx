@@ -43,7 +43,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title, onLogout, isAdmin, onN
       </main>
       <footer className="bg-slate-100 border-t border-slate-200 py-6 mt-auto">
         <div className="max-w-[1800px] mx-auto px-3 text-center text-slate-500 text-sm">
-          &copy; KSS出勤予定確認
+          &copy; AS2WORKS
         </div>
       </footer>
     </div>
