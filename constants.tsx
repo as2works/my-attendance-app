@@ -1,5 +1,5 @@
 
-import { AttendanceStatus, GroupId, GROUP_IDS } from './types';
+import { AttendanceStatus, Group } from './types';
 
 export const STATUS_COLORS: Record<AttendanceStatus, string> = {
   '〇': 'bg-emerald-100 text-emerald-700 border-emerald-200',
@@ -24,21 +24,22 @@ export const STATUS_LABELS: Record<AttendanceStatus, string> = {
 };
 
 const SHARED_STATUSES: AttendanceStatus[] = ['〇', '×', '△', 'AM', 'PM', '-'];
-const DORM_ONLY_STATUSES: AttendanceStatus[] = ['in', 'out'];
+const LODGING_STATUSES: AttendanceStatus[] = ['〇', '×', '△', 'AM', 'PM', 'in', 'out', '-'];
 
-export function getStatusOptions(groupId: GroupId): AttendanceStatus[] {
-  if (groupId === GROUP_IDS.DORM) {
-    return [...SHARED_STATUSES.slice(0, 5), ...DORM_ONLY_STATUSES, '-'];
-  }
-  return SHARED_STATUSES;
+export function getStatusOptions(groupOrFlag: Group | boolean | undefined): AttendanceStatus[] {
+  const hasLodging =
+    typeof groupOrFlag === 'boolean'
+      ? groupOrFlag
+      : !!groupOrFlag?.hasLodgingStatuses;
+  return hasLodging ? LODGING_STATUSES : SHARED_STATUSES;
 }
 
-export function isStatusAllowed(groupId: GroupId, status: AttendanceStatus): boolean {
-  return getStatusOptions(groupId).includes(status);
+export function isStatusAllowed(
+  groupOrFlag: Group | boolean | undefined,
+  status: AttendanceStatus
+): boolean {
+  return getStatusOptions(groupOrFlag).includes(status);
 }
-
-/** 後方互換: 旧コード向け。新規は getStatusOptions を使う */
-export const STATUS_OPTIONS: AttendanceStatus[] = getStatusOptions(GROUP_IDS.DORM);
 
 export const ADMIN_PASSWORD = 'admin';
 export const SHARED_USER_PASSWORD = '932';

@@ -11,6 +11,9 @@ const schema = a.schema({
   Group: a.model({
     id: a.string().required(),
     name: a.string().required(),
+    /** true のとき in/out（入寮・退寮）記号を使える */
+    hasLodgingStatuses: a.boolean().default(false),
+    order: a.integer().default(0),
   }).identifier(['id']),
 
   AccessLink: a.model({
@@ -22,6 +25,8 @@ const schema = a.schema({
     name: a.string().required(),
     order: a.integer().default(0),
     groupId: a.id(),
+    /** 月非依存の個人備考（最大300字想定、アプリ側で制限） */
+    note: a.string(),
   }).secondaryIndexes((index) => [
     index('groupId').sortKeys(['order']).queryField('listUsersByGroup'),
   ]),
@@ -47,6 +52,8 @@ const schema = a.schema({
     id: a.string().required(),
     seasonStartDate: a.date().required(),
     seasonEndDate: a.date().required(),
+    /** 事業休日 YYYY-MM-DD の JSON 配列文字列。カレンダー上は日曜と同様に赤表示 */
+    holidaysJson: a.string(),
     reissuePassword: a.string(),
     seedVersion: a.integer(),
   }).identifier(['id']),

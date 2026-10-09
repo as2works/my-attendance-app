@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ViewState, User, SystemConfig, GroupId, GROUP_IDS, AccessSession } from './types';
+import { ViewState, User, SystemConfig, GroupId, Group, AccessSession, DEFAULT_GROUP_IDS } from './types';
 import MainList from './views/MainList';
 import EditSchedule from './views/EditSchedule';
 import AdminDashboard from './views/AdminDashboard';
@@ -11,12 +11,19 @@ const App: React.FC = () => {
   const [view, setView] = useState<ViewState>('MAIN');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [config, setConfig] = useState<SystemConfig | null>(null);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [session, setSession] = useState<AccessSession | null>(null);
-  const [selectedGroupId, setSelectedGroupId] = useState<GroupId>(GROUP_IDS.DORM);
+  const [selectedGroupId, setSelectedGroupId] = useState<GroupId>(DEFAULT_GROUP_IDS.DORM);
   const [bootError, setBootError] = useState<string | null>(null);
   const [isBooting, setIsBooting] = useState(true);
 
   const isAdminUser = session?.role === 'ADMIN';
+
+  const refreshGroups = async () => {
+    const next = await db.listGroups();
+    setGroups(next);
+    return next;
+  };
 
   useEffect(() => {
     const init = async () => {
@@ -47,11 +54,16 @@ const App: React.FC = () => {
         };
         setSession(nextSession);
 
+        // listGroups は認証トークン必須のため、入場URL確定後に読む
+        const loadedGroups = await db.listGroups();
+        setGroups(loadedGroups);
+        const fallbackGroupId = loadedGroups[0]?.id || DEFAULT_GROUP_IDS.DORM;
+
         if (link.role === 'ADMIN') {
-          setSelectedGroupId(GROUP_IDS.DORM);
+          setSelectedGroupId(fallbackGroupId);
           setView('ADMIN');
         } else {
-          setSelectedGroupId(link.groupId || GROUP_IDS.DORM);
+          setSelectedGroupId(link.groupId || fallbackGroupId);
           setView('MAIN');
         }
 
@@ -83,7 +95,7 @@ const App: React.FC = () => {
     setAccessToken(null);
     setCurrentUser(null);
     setSession(null);
-    setSelectedGroupId(GROUP_IDS.DORM);
+    setSelectedGroupId(groups[0]?.id || DEFAULT_GROUP_IDS.DORM);
     setView('LOGGED_OUT');
     window.history.replaceState(null, '', '/');
   };
@@ -99,6 +111,17 @@ const App: React.FC = () => {
       setConfig(updatedConfig);
     } catch (err) {
       console.error('Failed to refresh config:', err);
+    }
+  };
+
+  const handleGroupsChange = async (next?: Group[]) => {
+    if (next) {
+      setGroups(next);
+    } else {
+      next = await refreshGroups();
+    }
+    if (!next.find((g) => g.id === selectedGroupId) && next[0]) {
+      setSelectedGroupId(next[0].id);
     }
   };
 
@@ -151,6 +174,7 @@ const App: React.FC = () => {
           onLogout={handleLogout}
           onEditUser={handleEditUser}
           config={config}
+          groups={groups}
           onNavigateAdmin={() => setView('ADMIN')}
           isAdmin={isAdminUser}
           groupId={selectedGroupId}
@@ -162,6 +186,7 @@ const App: React.FC = () => {
         <EditSchedule
           user={currentUser}
           config={config}
+          groups={groups}
           onBack={() => setView('MAIN')}
           onLogout={handleLogout}
         />
@@ -172,6 +197,8 @@ const App: React.FC = () => {
           onLogout={handleLogout}
           onConfigUpdate={handleConfigUpdate}
           onNavigateGeneral={() => setView('MAIN')}
+          groups={groups}
+          onGroupsChange={handleGroupsChange}
           groupId={selectedGroupId}
           onGroupChange={handleGroupChange}
           currentLinkId={session.linkId}

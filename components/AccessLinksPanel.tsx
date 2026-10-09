@@ -1,44 +1,39 @@
 
-import React, { useEffect, useState } from 'react';
-import { AccessLink, GROUP_IDS, GROUP_LABELS, GroupId } from '../types';
+import React, { useEffect, useMemo, useState } from 'react';
+import { AccessLink, Group } from '../types';
 import { db } from '../services/database';
 import { buildAccessUrl } from '../services/accessPath';
 
-type LinkKind = 'ADMIN' | 'DORM' | 'HOME';
+type LinkTarget =
+  | { kind: 'ADMIN' }
+  | { kind: 'GENERAL'; groupId: string; groupName: string };
 
 interface AccessLinksPanelProps {
-  /** いま開いている管理者 URL の linkId。管理者 URL 再発行後の案内に使う */
   currentLinkId: string;
+  groups: Group[];
 }
 
-function kindLabel(kind: LinkKind): string {
-  if (kind === 'ADMIN') return '管理者用（他の人に送らない）';
-  if (kind === 'DORM') return `一般用・${GROUP_LABELS.dorm}`;
-  return `一般用・${GROUP_LABELS.home}`;
-}
-
-function matchKind(link: AccessLink, kind: LinkKind): boolean {
-  if (kind === 'ADMIN') return link.role === 'ADMIN';
-  if (kind === 'DORM') return link.role === 'GENERAL' && link.groupId === GROUP_IDS.DORM;
-  return link.role === 'GENERAL' && link.groupId === GROUP_IDS.HOME;
-}
-
-function reissueParams(kind: LinkKind): { role: 'ADMIN' | 'GENERAL'; groupId?: GroupId } {
-  if (kind === 'ADMIN') return { role: 'ADMIN' };
-  if (kind === 'DORM') return { role: 'GENERAL', groupId: GROUP_IDS.DORM };
-  return { role: 'GENERAL', groupId: GROUP_IDS.HOME };
-}
-
-const AccessLinksPanel: React.FC<AccessLinksPanelProps> = ({ currentLinkId }) => {
+const AccessLinksPanel: React.FC<AccessLinksPanelProps> = ({ currentLinkId, groups }) => {
   const [links, setLinks] = useState<AccessLink[]>([]);
   const [loading, setLoading] = useState(true);
-  const [reissueKind, setReissueKind] = useState<LinkKind | null>(null);
+  const [reissueTarget, setReissueTarget] = useState<LinkTarget | null>(null);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [newUrl, setNewUrl] = useState<string | null>(null);
   const [reissuedAdmin, setReissuedAdmin] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const targets = useMemo<LinkTarget[]>(() => {
+    return [
+      { kind: 'ADMIN' },
+      ...groups.map((g) => ({
+        kind: 'GENERAL' as const,
+        groupId: g.id,
+        groupName: g.name,
+      })),
+    ];
+  }, [groups]);
 
   const load = async () => {
     setLoading(true);
@@ -49,7 +44,15 @@ const AccessLinksPanel: React.FC<AccessLinksPanelProps> = ({ currentLinkId }) =>
 
   useEffect(() => {
     load();
-  }, []);
+  }, [groups]);
+
+  const targetLabel = (t: LinkTarget) =>
+    t.kind === 'ADMIN' ? '管理者用（他の人に送らない）' : `一般用・${t.groupName}`;
+
+  const findLink = (t: LinkTarget) => {
+    if (t.kind === 'ADMIN') return links.find((l) => l.role === 'ADMIN');
+    return links.find((l) => l.role === 'GENERAL' && l.groupId === t.groupId);
+  };
 
   const copyText = async (text: string, id: string) => {
     try {
@@ -61,37 +64,41 @@ const AccessLinksPanel: React.FC<AccessLinksPanelProps> = ({ currentLinkId }) =>
     }
   };
 
-  const openReissue = (kind: LinkKind) => {
-    setReissueKind(kind);
+  const openReissue = (t: LinkTarget) => {
+    setReissueTarget(t);
     setPassword('');
     setError('');
   };
 
   const closeReissue = () => {
     if (busy) return;
-    setReissueKind(null);
+    setReissueTarget(null);
     setPassword('');
     setError('');
   };
 
   const submitReissue = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!reissueKind) return;
+    if (!reissueTarget) return;
     setBusy(true);
     setError('');
     try {
-      const params = reissueParams(reissueKind);
-      const created = await db.reissueAccessLink({
-        ...params,
-        password,
-      });
+      const created =
+        reissueTarget.kind === 'ADMIN'
+          ? await db.reissueAccessLink({ role: 'ADMIN', password })
+          : await db.reissueAccessLink({
+              role: 'GENERAL',
+              groupId: reissueTarget.groupId,
+              password,
+            });
       const url = buildAccessUrl(created.id);
       const wasCurrentAdmin =
-        reissueKind === 'ADMIN' && currentLinkId === links.find(l => l.role === 'ADMIN')?.id;
+        reissueTarget.kind === 'ADMIN' &&
+        currentLinkId === links.find((l) => l.role === 'ADMIN')?.id;
 
       setNewUrl(url);
       setReissuedAdmin(!!wasCurrentAdmin);
-      setReissueKind(null);
+      setReissueTarget(null);
       setPassword('');
       await load();
     } catch (err: any) {
@@ -106,14 +113,12 @@ const AccessLinksPanel: React.FC<AccessLinksPanelProps> = ({ currentLinkId }) =>
     }
   };
 
-  const kinds: LinkKind[] = ['ADMIN', 'DORM', 'HOME'];
-
   return (
     <div className="space-y-6 animate-in slide-in-from-right-4 duration-300 overflow-y-auto pr-2 pb-8">
       <div>
         <h3 className="text-xl font-black text-slate-800">入場URL</h3>
         <p className="text-sm text-slate-500 font-medium mt-1">
-          いつでもコピーできます。なくしたときだけ再発行してください。再発行すると古いURLは使えなくなります。
+          グループを追加すると一般用URLも自動で増えます。再発行すると古いURLは使えなくなります。
         </p>
       </div>
 
@@ -124,18 +129,19 @@ const AccessLinksPanel: React.FC<AccessLinksPanelProps> = ({ currentLinkId }) =>
         </div>
       ) : (
         <div className="space-y-4">
-          {kinds.map((kind) => {
-            const link = links.find(l => matchKind(l, kind));
+          {targets.map((target) => {
+            const key = target.kind === 'ADMIN' ? 'ADMIN' : target.groupId;
+            const link = findLink(target);
             const url = link ? buildAccessUrl(link.id) : '';
             return (
-              <div key={kind} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+              <div key={key} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
                 <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <h4 className={`font-black text-sm ${kind === 'ADMIN' ? 'text-rose-700' : 'text-slate-800'}`}>
-                    {kindLabel(kind)}
+                  <h4 className={`font-black text-sm ${target.kind === 'ADMIN' ? 'text-rose-700' : 'text-slate-800'}`}>
+                    {targetLabel(target)}
                   </h4>
                   <button
                     type="button"
-                    onClick={() => openReissue(kind)}
+                    onClick={() => openReissue(target)}
                     disabled={!link}
                     className="text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40"
                   >
@@ -158,7 +164,7 @@ const AccessLinksPanel: React.FC<AccessLinksPanelProps> = ({ currentLinkId }) =>
                     </button>
                   </div>
                 ) : (
-                  <p className="text-sm text-rose-500 font-bold">URLがありません。再読み込みするか、開発者に確認してください。</p>
+                  <p className="text-sm text-rose-500 font-bold">URLがありません。再読み込みするか、グループ管理を確認してください。</p>
                 )}
               </div>
             );
@@ -167,10 +173,10 @@ const AccessLinksPanel: React.FC<AccessLinksPanelProps> = ({ currentLinkId }) =>
       )}
 
       <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl text-sm text-amber-900 font-medium leading-relaxed">
-        再発行には、あらかじめ設定された専用パスワードが必要です（普段の入場とは別です）。パスワードは DynamoDB の Config（id=system）の <code className="text-xs">reissuePassword</code> にあります。
+        再発行には、あらかじめ設定された専用パスワードが必要です（普段の入場とは別です）。
       </div>
 
-      {reissueKind && (
+      {reissueTarget && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
           <form
             onSubmit={submitReissue}
@@ -178,7 +184,7 @@ const AccessLinksPanel: React.FC<AccessLinksPanelProps> = ({ currentLinkId }) =>
           >
             <h4 className="text-lg font-black text-slate-800">URLを再発行</h4>
             <p className="text-sm text-slate-600 font-medium leading-relaxed">
-              「{kindLabel(reissueKind)}」を作り直します。<br />
+              「{targetLabel(reissueTarget)}」を作り直します。<br />
               古いURLはすぐに無効になります。新しいURLを必ず控えてください。
             </p>
             <div>
@@ -197,12 +203,7 @@ const AccessLinksPanel: React.FC<AccessLinksPanelProps> = ({ currentLinkId }) =>
               {error && <p className="text-rose-500 text-sm font-bold mt-2">{error}</p>}
             </div>
             <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={closeReissue}
-                disabled={busy}
-                className="flex-1 py-3 rounded-xl bg-slate-100 text-slate-700 font-bold"
-              >
+              <button type="button" onClick={closeReissue} disabled={busy} className="flex-1 py-3 rounded-xl bg-slate-100 text-slate-700 font-bold">
                 やめる
               </button>
               <button

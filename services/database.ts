@@ -7,6 +7,7 @@ import {
   History,
   SystemConfig,
   GroupId,
+  Group,
   AccessLink,
   AccessLinkRole,
 } from '../types';
@@ -77,6 +78,9 @@ export const db = {
     await invoke('saveUser', user);
   },
 
+  saveUserNote: async (userId: string, note: string, groupId?: GroupId): Promise<{ note: string }> =>
+    invoke<{ note: string }>('saveUserNote', { userId, note, groupId }),
+
   moveUserToGroup: async (userId: string, targetGroupId: GroupId) => {
     await invoke('moveUserToGroup', { userId, targetGroupId });
   },
@@ -107,6 +111,10 @@ export const db = {
       limit: options.limit,
     }),
 
+  /** 管理者向け。グループごとの未消込履歴件数（各グループ最大200件まで集計） */
+  getUnprocessedHistoryCounts: async (): Promise<Record<string, number>> =>
+    invoke<Record<string, number>>('getUnprocessedHistoryCounts'),
+
   addHistory: async (history: Omit<History, 'id' | 'createdAt'>) => {
     await invoke('addHistory', history);
   },
@@ -115,11 +123,42 @@ export const db = {
     await invoke('updateHistoryStatus', { id, isProcessed });
   },
 
-  getConfig: async (): Promise<SystemConfig> => invoke<SystemConfig>('getConfig'),
+  getConfig: async (): Promise<SystemConfig> => {
+    const config = await invoke<SystemConfig>('getConfig');
+    return {
+      ...config,
+      holidays: Array.isArray(config.holidays) ? config.holidays : [],
+    };
+  },
 
   saveConfig: async (config: SystemConfig) => {
-    await invoke('saveConfig', config);
+    await invoke('saveConfig', {
+      ...config,
+      holidays: Array.isArray(config.holidays) ? config.holidays : [],
+    });
   },
+
+  listGroups: async (): Promise<Group[]> => invoke<Group[]>('listGroups'),
+
+  createGroup: async (params: {
+    name: string;
+    hasLodgingStatuses: boolean;
+  }): Promise<Group> => invoke<Group>('createGroup', params),
+
+  updateGroup: async (params: {
+    id: string;
+    name?: string;
+    hasLodgingStatuses?: boolean;
+  }): Promise<Group> => invoke<Group>('updateGroup', params),
+
+  reorderGroups: async (ids: string[]): Promise<Group[]> =>
+    invoke<Group[]>('reorderGroups', { ids }),
+
+  deleteGroup: async (params: {
+    id: string;
+    targetGroupId: string;
+  }): Promise<{ movedUsers: number; targetGroupId: string }> =>
+    invoke('deleteGroup', params),
 
   resolveAccessLink: async (linkId: string): Promise<AccessLink | null> => {
     try {

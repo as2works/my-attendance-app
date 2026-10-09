@@ -1,24 +1,41 @@
-
 import React from 'react';
-import { GROUP_IDS, GROUP_LABELS, GroupId } from '../types';
+import { Group, GroupId } from '../types';
 
 interface GroupSelectorProps {
+  groups: Group[];
   value: GroupId;
   onChange: (groupId: GroupId) => void;
   className?: string;
+  label?: string;
+  /** グループID → 未消込件数。0超のとき選択肢に件数を付与 */
+  unprocessedCounts?: Record<string, number>;
 }
 
-const GroupSelector: React.FC<GroupSelectorProps> = ({ value, onChange, className = '' }) => {
+const GroupSelector: React.FC<GroupSelectorProps> = ({
+  groups,
+  value,
+  onChange,
+  className = '',
+  label = 'グループ',
+  unprocessedCounts,
+}) => {
   return (
     <label className={`flex items-center gap-2 ${className}`}>
-      <span className="text-xs font-bold text-slate-500 whitespace-nowrap">グループ</span>
+      <span className="text-xs font-bold text-slate-500 whitespace-nowrap">{label}</span>
       <select
         value={value}
-        onChange={(e) => onChange(e.target.value as GroupId)}
+        onChange={(e) => onChange(e.target.value)}
         className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-800 font-bold text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400"
       >
-        <option value={GROUP_IDS.DORM}>{GROUP_LABELS.dorm}</option>
-        <option value={GROUP_IDS.HOME}>{GROUP_LABELS.home}</option>
+        {groups.map((g) => {
+          const unprocessed = unprocessedCounts?.[g.id] ?? 0;
+          const pending = unprocessed > 0 ? `（未消込 ${unprocessed}）` : '';
+          return (
+            <option key={g.id} value={g.id}>
+              {g.name}{pending}
+            </option>
+          );
+        })}
       </select>
     </label>
   );

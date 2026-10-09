@@ -27,6 +27,20 @@
               "isRequired": true,
               "attributes": []
             },
+            "hasLodgingStatuses": {
+              "name": "hasLodgingStatuses",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
+            "order": {
+              "name": "order",
+              "isArray": false,
+              "type": "Int",
+              "isRequired": false,
+              "attributes": []
+            },
             "createdAt": {
               "name": "createdAt",
               "isArray": false,
@@ -175,6 +189,13 @@
               "name": "groupId",
               "isArray": false,
               "type": "ID",
+              "isRequired": false,
+              "attributes": []
+            },
+            "note": {
+              "name": "note",
+              "isArray": false,
+              "type": "String",
               "isRequired": false,
               "attributes": []
             },
@@ -438,6 +459,13 @@
               "isArray": false,
               "type": "AWSDate",
               "isRequired": true,
+              "attributes": []
+            },
+            "holidaysJson": {
+              "name": "holidaysJson",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
               "attributes": []
             },
             "reissuePassword": {
