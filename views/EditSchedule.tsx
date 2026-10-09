@@ -26,6 +26,8 @@ const EditSchedule: React.FC<EditScheduleProps> = ({ user, config, groups, onBac
   const [isLoading, setIsLoading] = useState(true);
   const [note, setNote] = useState(user.note || '');
   const [noteOpen, setNoteOpen] = useState(false);
+  /** 未入力（-）・△、および未登録の変更日だけ表示。デフォルトON */
+  const [showNeedsInputOnly, setShowNeedsInputOnly] = useState(true);
   const statusOptions = useMemo(() => getStatusOptions(currentGroup), [currentGroup]);
 
   useEffect(() => {
@@ -51,6 +53,17 @@ const EditSchedule: React.FC<EditScheduleProps> = ({ user, config, groups, onBac
     () => listDatesInSeason(config.seasonStartDate, config.seasonEndDate),
     [config.seasonStartDate, config.seasonEndDate]
   );
+
+  const visibleDates = useMemo(() => {
+    if (!showNeedsInputOnly) return datesInRange;
+    return datesInRange.filter((date) => {
+      const current = localSchedules[date] || '-';
+      const initial = initialSchedules[date] || '-';
+      const needsInput = current === '-' || current === '△';
+      const isDirty = current !== initial;
+      return needsInput || isDirty;
+    });
+  }, [datesInRange, showNeedsInputOnly, localSchedules, initialSchedules]);
 
   const handleStatusChange = (date: string, newStatus: AttendanceStatus) => {
     setLocalSchedules(prev => ({ ...prev, [date]: newStatus }));
@@ -198,16 +211,35 @@ const EditSchedule: React.FC<EditScheduleProps> = ({ user, config, groups, onBac
           <i className="fas fa-chevron-right text-slate-300 shrink-0"></i>
         </button>
 
+        <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200 px-3 py-2.5 sm:px-4 sm:py-3 shadow-sm">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showNeedsInputOnly}
+              onChange={(e) => setShowNeedsInputOnly(e.target.checked)}
+              className="mt-0.5 w-5 h-5 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 shrink-0"
+            />
+            <span className="min-w-0">
+              <span className="block text-sm font-black text-slate-800">表示切替</span>
+              <span className="block text-[11px] sm:text-xs text-slate-600 font-bold mt-0.5 leading-snug">
+                {showNeedsInputOnly
+                  ? '入力が必要な日のみ表示中（無し・△のみ表示中）'
+                  : 'すべての日を表示中'}
+              </span>
+            </span>
+          </label>
+        </div>
+
         <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-slate-200 divide-y divide-slate-100 overflow-hidden min-h-[200px] relative">
           {isLoading && (
             <div className="absolute inset-0 bg-white/60 flex items-center justify-center z-10">
               <i className="fas fa-spinner fa-spin text-indigo-600 text-2xl"></i>
             </div>
           )}
-          {datesInRange.map(dateStr => {
+          {visibleDates.map(dateStr => {
             const { label } = formatDateLabel(dateStr);
             const status = localSchedules[dateStr] || '-';
-            const isChanged = initialSchedules[dateStr] !== localSchedules[dateStr];
+            const isChanged = (initialSchedules[dateStr] || '-') !== status;
             const tone = getDayTone(dateStr, config.holidays || []);
 
             return (
@@ -244,6 +276,12 @@ const EditSchedule: React.FC<EditScheduleProps> = ({ user, config, groups, onBac
               設定された期間がありません。管理者に確認してください。
             </div>
           )}
+          {!isLoading && datesInRange.length > 0 && visibleDates.length === 0 && (
+            <div className="p-12 text-center text-slate-400 font-bold space-y-2">
+              <p>入力が必要な日はありません</p>
+              <p className="text-xs font-medium text-slate-400">全部表示する場合は上のチェックを外してください</p>
+            </div>
+          )}
         </div>
 
         <div className="bg-slate-50 p-6 rounded-2xl border border-dashed border-slate-200 mb-8">
@@ -253,6 +291,7 @@ const EditSchedule: React.FC<EditScheduleProps> = ({ user, config, groups, onBac
           </h3>
           <ul className="text-sm text-slate-500 space-y-2 list-disc list-inside">
             <li>日程ごとに記号ボタンをタップして予定を選択してください。</li>
+            <li>「表示切替」で無し・△に絞れます（変更中の日は登録まで残ります）。</li>
             <li>「無し」を選択すると予定が未設定の状態になります。</li>
             <li>入力を終えたら、画面上部の「登録する」ボタンを必ず押して保存してください。</li>
             <li>記号で表せない連絡は、上の「備考を書く」から入力できます（予定の保存とは別です）。</li>
