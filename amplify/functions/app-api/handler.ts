@@ -449,16 +449,36 @@ export const handler = async (event: { arguments: Args }) => {
       case 'saveUser': {
         requireAdmin(session);
         const groupId = await effectiveGroupId(session, payload.groupId);
+        const name = requireId(payload.name, 'name').trim();
         const usersInGroup = await getUsers(session, { groupId });
         if (payload.id && usersInGroup.some((u: any) => u.id === payload.id)) {
+          const existing = usersInGroup.find((u: any) => u.id === payload.id);
+          const prevName = existing?.name || '';
           await client.models.User.update({
             id: payload.id,
-            name: payload.name,
+            name,
             groupId,
           });
+          // 履歴は作成時の userName を持つため、改名時は同一 userId の表示名を揃える
+          if (prevName && prevName !== name) {
+            const { data: histories } = await client.models.History.listHistoriesByGroup(
+              { groupId },
+              { sortDirection: 'DESC', limit: 500 }
+            );
+            await Promise.all(
+              histories
+                .filter((h) => h.userId === payload.id && h.userName !== name)
+                .map((h) =>
+                  client.models.History.update({
+                    id: h.id,
+                    userName: name,
+                  })
+                )
+            );
+          }
         } else {
           await client.models.User.create({
-            name: payload.name,
+            name,
             order: usersInGroup.length,
             groupId,
           });

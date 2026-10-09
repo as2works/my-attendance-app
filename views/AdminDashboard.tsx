@@ -68,9 +68,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [currentMonth, setCurrentMonth] = useState(() => new Date().getMonth());
   const [currentYear, setCurrentYear] = useState(() => new Date().getFullYear());
   const [holidayDraft, setHolidayDraft] = useState('');
+  const [configSaveNotice, setConfigSaveNotice] = useState<string | null>(null);
   const [noteUser, setNoteUser] = useState<User | null>(null);
   const [moveUserId, setMoveUserId] = useState<string | null>(null);
   const [moveTargetId, setMoveTargetId] = useState('');
+  const [renameUserId, setRenameUserId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [renameBusy, setRenameBusy] = useState(false);
   const [nameQuery, setNameQuery] = useState('');
   const [unprocessedCounts, setUnprocessedCounts] = useState<Record<string, number>>({});
   const [overviewTopPercent, setOverviewTopPercent] = useState(readStoredSplitPercent);
@@ -197,6 +201,37 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  const openRenameUser = (user: User) => {
+    setRenameUserId(user.id);
+    setRenameDraft(user.name);
+  };
+
+  const confirmRenameUser = async () => {
+    const user = users.find((u) => u.id === renameUserId);
+    if (!user || renameBusy) return;
+    const name = renameDraft.trim();
+    if (!name) {
+      alert('氏名を入力してください。');
+      return;
+    }
+    if (name === user.name) {
+      setRenameUserId(null);
+      return;
+    }
+    setRenameBusy(true);
+    try {
+      await db.saveUser({ id: user.id, name, groupId: user.groupId });
+      setRenameUserId(null);
+      await refreshData();
+      alert(`「${user.name}」を「${name}」に変更しました。`);
+    } catch (err) {
+      console.error(err);
+      alert('氏名の変更に失敗しました。sandbox のデプロイ完了後にもう一度お試しください。');
+    } finally {
+      setRenameBusy(false);
+    }
+  };
+
   const handleMoveUser = async (index: number, direction: 'up' | 'down') => {
     const newUsers = [...users];
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
@@ -240,7 +275,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleConfigSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!config) return;
-    await persistConfig(config, '設定を保存しました。');
+    await persistConfig(config, '期間設定を保存しました');
+  };
+
+  const showConfigSaved = (message: string) => {
+    setConfigSaveNotice(message);
+    window.setTimeout(() => {
+      setConfigSaveNotice((current) => (current === message ? null : current));
+    }, 2500);
   };
 
   const persistConfig = async (next: SystemConfig, successMessage?: string) => {
@@ -251,11 +293,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         holidays: next.holidays || [],
       });
       onConfigUpdate();
-      if (successMessage) alert(successMessage);
+      if (successMessage) showConfigSaved(successMessage);
       await refreshData();
     } catch (err) {
       console.error(err);
-      alert('保存に失敗しました。sandbox の再デプロイ後にもう一度お試しください。');
+      alert('保存に失敗しました。通信状況を確認してもう一度お試しください。');
       await refreshData();
     }
   };
@@ -266,16 +308,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setHolidayDraft('');
     await persistConfig(
       { ...config, holidays: nextHolidays },
-      '休日を追加して保存しました。'
+      '休日を追加して保存しました'
     );
   };
 
   const removeHoliday = async (dateStr: string) => {
     if (!config) return;
-    await persistConfig({
-      ...config,
-      holidays: (config.holidays || []).filter((d) => d !== dateStr),
-    });
+    await persistConfig(
+      {
+        ...config,
+        holidays: (config.holidays || []).filter((d) => d !== dateStr),
+      },
+      '休日を削除して保存しました'
+    );
   };
 
   const handleMonthChange = (offset: number) => {
@@ -595,7 +640,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="space-y-6 animate-in slide-in-from-right-4 duration-300 overflow-y-auto pr-2">
               <div className="flex justify-between items-center gap-4 flex-wrap">
                 <h3 className="text-xl font-black text-slate-800">{currentGroupName}の利用者名簿</h3>
-                <p className="text-xs text-slate-400 font-bold">並べ替え・グループ移動・削除ができます</p>
+                <p className="text-xs text-slate-400 font-bold">氏名変更・並べ替え・グループ移動・削除ができます</p>
               </div>
 
               <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-3 shrink-0">
@@ -660,6 +705,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
 
                       <button
+                        type="button"
+                        onClick={() => openRenameUser(u)}
+                        className="px-3 h-10 text-xs font-bold text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-xl transition border border-slate-200"
+                        title="氏名を変更"
+                      >
+                        氏名変更
+                      </button>
+
+                      <button
                         onClick={() => openMoveUser(u)}
                         disabled={!otherGroups.length}
                         className="px-3 h-10 text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition border border-indigo-100 disabled:opacity-40"
@@ -693,7 +747,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           {activeTab === 'CONFIG' && (
             <div className="space-y-6 max-w-xl animate-in slide-in-from-right-4 duration-300 overflow-y-auto">
-              <h3 className="text-xl font-black text-slate-800">システム設定（全体共通）</h3>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-xl font-black text-slate-800">システム設定（全体共通）</h3>
+                {configSaveNotice && (
+                  <p className="text-sm font-bold text-emerald-600 animate-in fade-in duration-200">
+                    <i className="fas fa-check-circle mr-1.5"></i>
+                    {configSaveNotice}
+                  </p>
+                )}
+              </div>
 
               <form onSubmit={handleConfigSubmit} className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
                 <div>
@@ -802,6 +864,48 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             refreshData();
           }}
         />
+      )}
+
+      {renameUserId && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 space-y-5 border border-slate-100">
+            <h4 className="text-lg font-black text-slate-800">氏名を変更</h4>
+            <p className="text-sm text-slate-600 font-medium">
+              名簿の表示名を変更します（変更履歴には載せません）。
+            </p>
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">新しい氏名</label>
+              <input
+                type="text"
+                value={renameDraft}
+                onChange={(e) => setRenameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void confirmRenameUser();
+                }}
+                autoFocus
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 font-bold focus:outline-none focus:ring-4 focus:ring-indigo-100"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setRenameUserId(null)}
+                disabled={renameBusy}
+                className="flex-1 py-3 rounded-xl bg-slate-100 font-bold"
+              >
+                やめる
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmRenameUser()}
+                disabled={renameBusy || !renameDraft.trim()}
+                className="flex-1 py-3 rounded-xl bg-indigo-600 text-white font-black disabled:opacity-40"
+              >
+                {renameBusy ? '変更中…' : '変更する'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {moveUserId && (
