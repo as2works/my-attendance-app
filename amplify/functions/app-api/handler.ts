@@ -607,7 +607,7 @@ async function buildWorkspaceListItem(ws: WorkspaceRecord) {
   };
 }
 
-async function listAllByFilter<T extends { id?: string }>(
+async function listAllByFilter<T>(
   fetchPage: (nextToken?: string) => Promise<{ data: T[]; nextToken?: string | null }>
 ): Promise<T[]> {
   const all: T[] = [];
