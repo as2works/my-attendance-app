@@ -37,17 +37,25 @@ const EditSchedule: React.FC<EditScheduleProps> = ({ user, config, groups, onBac
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
-      const savedSchedules = await db.getSchedulesForUser(user.id, user.groupId);
-      const map: Record<string, AttendanceStatus> = {};
-      savedSchedules.forEach(s => {
-        map[s.date] = s.status;
-      });
-      setLocalSchedules(map);
-      setInitialSchedules({ ...map });
-      setIsLoading(false);
+      try {
+        const savedSchedules = await db.getSchedulesForUser(user.id, user.groupId);
+        const map: Record<string, AttendanceStatus> = {};
+        savedSchedules.forEach((s) => {
+          map[s.date] = s.status;
+        });
+        setLocalSchedules(map);
+        setInitialSchedules({ ...map });
+      } catch (err) {
+        console.error(err);
+        alert('予定の読み込みに失敗しました。戻ってもう一度開いてください。');
+        setLocalSchedules({});
+        setInitialSchedules({});
+      } finally {
+        setIsLoading(false);
+      }
     };
-    fetchData();
-  }, [user.id]);
+    void fetchData();
+  }, [user.id, user.groupId]);
 
   const datesInRange = useMemo(
     () => listDatesInSeason(config.seasonStartDate, config.seasonEndDate),
@@ -70,10 +78,11 @@ const EditSchedule: React.FC<EditScheduleProps> = ({ user, config, groups, onBac
   };
 
   const handleSave = async () => {
+    if (isSaving || isLoading) return;
     setIsSaving(true);
     try {
       const changes: { date: string; oldStatus: string; newStatus: string }[] = [];
-      datesInRange.forEach(date => {
+      datesInRange.forEach((date) => {
         const oldVal = initialSchedules[date] || '-';
         const newVal = localSchedules[date] || '-';
         if (oldVal !== newVal) {
@@ -82,7 +91,7 @@ const EditSchedule: React.FC<EditScheduleProps> = ({ user, config, groups, onBac
       });
 
       if (changes.length > 0) {
-        const changedUpdates = changes.map(c => ({
+        const changedUpdates = changes.map((c) => ({
           userId: user.id,
           date: c.date,
           status: c.newStatus as AttendanceStatus,
@@ -108,7 +117,13 @@ const EditSchedule: React.FC<EditScheduleProps> = ({ user, config, groups, onBac
   };
 
   const hasChanges = useMemo(() => {
-    return JSON.stringify(localSchedules) !== JSON.stringify(initialSchedules);
+    const keys = new Set([...Object.keys(localSchedules), ...Object.keys(initialSchedules)]);
+    for (const date of keys) {
+      const a = localSchedules[date] || '-';
+      const b = initialSchedules[date] || '-';
+      if (a !== b) return true;
+    }
+    return false;
   }, [localSchedules, initialSchedules]);
 
   const handleBack = () => {
@@ -138,7 +153,10 @@ const EditSchedule: React.FC<EditScheduleProps> = ({ user, config, groups, onBac
     : 'grid grid-cols-3 sm:grid-cols-6 gap-1 sm:gap-2';
 
   return (
-    <Layout title={`${user.name} さんの予定編集（${currentGroupName}）`} onLogout={onLogout}>
+    <Layout
+      title={`${config.showEmployeeId !== false && user.employeeId ? `${user.employeeId} ` : ''}${user.name} さんの予定編集（${currentGroupName}）`}
+      onLogout={onLogout}
+    >
       <div className="max-w-2xl mx-auto space-y-3 sm:space-y-6">
         <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-slate-200 sticky top-[44px] sm:top-[72px] z-30 overflow-hidden">
           <div className="px-3 py-2 sm:p-6 flex flex-row justify-between items-center gap-2 sm:gap-4">

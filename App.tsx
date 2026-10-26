@@ -3,6 +3,7 @@ import { ViewState, User, SystemConfig, GroupId, Group, AccessSession, DEFAULT_G
 import MainList from './views/MainList';
 import EditSchedule from './views/EditSchedule';
 import AdminDashboard from './views/AdminDashboard';
+import WorkspacePortal from './views/WorkspacePortal';
 import AccessGate from './views/AccessGate';
 import { db, setAccessToken } from './services/database';
 import { getAccessTokenFromPath, buildAccessUrl } from './services/accessPath';
@@ -13,10 +14,16 @@ const App: React.FC = () => {
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const [session, setSession] = useState<AccessSession | null>(null);
+  const [workspaceName, setWorkspaceName] = useState('');
   const [selectedGroupId, setSelectedGroupId] = useState<GroupId>(DEFAULT_GROUP_IDS.DORM);
   const [bootError, setBootError] = useState<string | null>(null);
   const [isBooting, setIsBooting] = useState(true);
+  const [devBootstrapLinks, setDevBootstrapLinks] = useState<{
+    ownerUrl?: string;
+    adminUrl?: string;
+  }>({});
 
+  const isOwner = session?.role === 'OWNER';
   const isAdminUser = session?.role === 'ADMIN';
 
   const refreshGroups = async () => {
@@ -28,7 +35,18 @@ const App: React.FC = () => {
   useEffect(() => {
     const init = async () => {
       try {
-        await db.ensureSeed();
+        const seed = await db.ensureSeed(
+          import.meta.env.DEV ? { discloseBootstrapLinks: true } : undefined
+        );
+        if (import.meta.env.DEV) {
+          const ownerUrl = seed.ownerLinkId ? buildAccessUrl(seed.ownerLinkId) : undefined;
+          const adminUrl = seed.defaultAdminLinkId
+            ? buildAccessUrl(seed.defaultAdminLinkId)
+            : undefined;
+          setDevBootstrapLinks({ ownerUrl, adminUrl });
+          if (ownerUrl) console.info('[開発用] 箱一覧ポータル（OWNER）', ownerUrl);
+          if (adminUrl) console.info('[開発用] 既定箱の管理者（ADMIN）', adminUrl);
+        }
 
         const token = getAccessTokenFromPath();
         if (!token) {
@@ -50,14 +68,29 @@ const App: React.FC = () => {
         const nextSession: AccessSession = {
           linkId: link.id,
           role: link.role,
+          workspaceId: link.workspaceId,
           groupId: link.groupId,
         };
         setSession(nextSession);
 
-        // listGroups は認証トークン必須のため、入場URL確定後に読む
+        if (link.role === 'OWNER') {
+          setView('PORTAL');
+          if (import.meta.env.DEV) {
+            console.info('[ポータル OWNER URL]', buildAccessUrl(link.id));
+          }
+          return;
+        }
+
         const loadedGroups = await db.listGroups();
         setGroups(loadedGroups);
         const fallbackGroupId = loadedGroups[0]?.id || DEFAULT_GROUP_IDS.DORM;
+
+        try {
+          const meta = await db.getWorkspaceMeta();
+          setWorkspaceName(meta.name);
+        } catch {
+          setWorkspaceName('');
+        }
 
         if (link.role === 'ADMIN') {
           setSelectedGroupId(fallbackGroupId);
@@ -76,6 +109,7 @@ const App: React.FC = () => {
             '[入場URL（開発用）]',
             links.map((item) => ({
               role: item.role,
+              workspaceId: item.workspaceId ?? '(n/a)',
               groupId: item.groupId ?? '(admin)',
               url: buildAccessUrl(item.id),
             }))
@@ -148,7 +182,7 @@ const App: React.FC = () => {
     );
   }
 
-  if (isBooting || (!config && view !== 'NOT_FOUND' && view !== 'LOGGED_OUT')) {
+  if (isBooting) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-4">
@@ -160,11 +194,30 @@ const App: React.FC = () => {
   }
 
   if (view === 'NOT_FOUND') {
-    return <AccessGate mode="not_found" />;
+    return <AccessGate mode="not_found" devLinks={devBootstrapLinks} />;
   }
 
-  if (view === 'LOGGED_OUT' || !session || !config) {
+  if (view === 'LOGGED_OUT' || !session) {
     return <AccessGate mode="logged_out" />;
+  }
+
+  if (view === 'PORTAL' && isOwner) {
+    return (
+      <div className="min-h-screen">
+        <WorkspacePortal onLogout={handleLogout} />
+      </div>
+    );
+  }
+
+  if (!config) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-4">
+          <i className="fas fa-spinner fa-spin text-4xl text-indigo-600"></i>
+          <p className="text-slate-500 font-bold">データを読み込み中...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -202,6 +255,7 @@ const App: React.FC = () => {
           groupId={selectedGroupId}
           onGroupChange={handleGroupChange}
           currentLinkId={session.linkId}
+          workspaceName={workspaceName}
         />
       )}
     </div>

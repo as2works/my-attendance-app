@@ -23,6 +23,11 @@ const AccessLinksPanel: React.FC<AccessLinksPanelProps> = ({ currentLinkId, grou
   const [newUrl, setNewUrl] = useState<string | null>(null);
   const [reissuedAdmin, setReissuedAdmin] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [rotateOpen, setRotateOpen] = useState(false);
+  const [rotateCurrent, setRotateCurrent] = useState('');
+  const [rotateError, setRotateError] = useState('');
+  const [rotateBusy, setRotateBusy] = useState(false);
+  const [rotatedPassword, setRotatedPassword] = useState<string | null>(null);
 
   const targets = useMemo<LinkTarget[]>(() => {
     return [
@@ -37,9 +42,16 @@ const AccessLinksPanel: React.FC<AccessLinksPanelProps> = ({ currentLinkId, grou
 
   const load = async () => {
     setLoading(true);
-    const data = await db.listAccessLinks();
-    setLinks(data);
-    setLoading(false);
+    try {
+      const data = await db.listAccessLinks();
+      setLinks(data);
+    } catch (err) {
+      console.error(err);
+      alert('入場URLの読み込みに失敗しました。');
+      setLinks([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -79,7 +91,7 @@ const AccessLinksPanel: React.FC<AccessLinksPanelProps> = ({ currentLinkId, grou
 
   const submitReissue = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!reissueTarget) return;
+    if (!reissueTarget || busy) return;
     setBusy(true);
     setError('');
     try {
@@ -172,8 +184,22 @@ const AccessLinksPanel: React.FC<AccessLinksPanelProps> = ({ currentLinkId, grou
         </div>
       )}
 
-      <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl text-sm text-amber-900 font-medium leading-relaxed">
-        再発行には、あらかじめ設定された専用パスワードが必要です（普段の入場とは別です）。
+      <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl text-sm text-amber-900 font-medium leading-relaxed space-y-3">
+        <p>
+          再発行には、箱作成時に表示された専用パスワードが必要です（普段の入場とは別です）。
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setRotateOpen(true);
+            setRotateCurrent('');
+            setRotateError('');
+            setRotatedPassword(null);
+          }}
+          className="text-xs font-black px-3 py-2 rounded-lg bg-amber-700 text-white hover:bg-amber-800"
+        >
+          再発行パスワードを変更…
+        </button>
       </div>
 
       {reissueTarget && (
@@ -214,6 +240,91 @@ const AccessLinksPanel: React.FC<AccessLinksPanelProps> = ({ currentLinkId, grou
                 {busy ? '処理中…' : '再発行する'}
               </button>
             </div>
+          </form>
+        </div>
+      )}
+
+      {rotateOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (rotateBusy) return;
+              setRotateBusy(true);
+              setRotateError('');
+              try {
+                const result = await db.rotateReissuePassword(rotateCurrent);
+                setRotatedPassword(result.reissuePassword);
+                setRotateCurrent('');
+              } catch (err: any) {
+                if (String(err?.message).includes('INVALID_REISSUE_PASSWORD')) {
+                  setRotateError('現在のパスワードが正しくありません');
+                } else {
+                  console.error(err);
+                  setRotateError('変更に失敗しました');
+                }
+              } finally {
+                setRotateBusy(false);
+              }
+            }}
+            className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 space-y-5 border border-slate-100"
+          >
+            <h4 className="text-lg font-black text-slate-800">再発行パスワードを変更</h4>
+            {rotatedPassword ? (
+              <>
+                <p className="text-sm text-slate-600 font-medium">
+                  新しいパスワードです。この画面でしか表示されません。必ず控えてください。
+                </p>
+                <code className="block px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-sm font-mono font-black break-all">
+                  {rotatedPassword}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRotateOpen(false);
+                    setRotatedPassword(null);
+                  }}
+                  className="w-full py-3 rounded-xl bg-slate-800 text-white font-black"
+                >
+                  控えました
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-slate-600 font-medium">
+                  現在の再発行用パスワードを入力すると、新しいパスワードに差し替えます。
+                </p>
+                <input
+                  type="password"
+                  value={rotateCurrent}
+                  onChange={(e) => {
+                    setRotateCurrent(e.target.value);
+                    setRotateError('');
+                  }}
+                  className="w-full px-4 py-3 rounded-xl border-2 border-slate-100 font-bold"
+                  placeholder="現在のパスワード"
+                  autoFocus
+                />
+                {rotateError && <p className="text-rose-500 text-sm font-bold">{rotateError}</p>}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRotateOpen(false)}
+                    disabled={rotateBusy}
+                    className="flex-1 py-3 rounded-xl bg-slate-100 font-bold"
+                  >
+                    やめる
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={rotateBusy || !rotateCurrent}
+                    className="flex-1 py-3 rounded-xl bg-amber-700 text-white font-black disabled:opacity-40"
+                  >
+                    {rotateBusy ? '処理中…' : '変更する'}
+                  </button>
+                </div>
+              </>
+            )}
           </form>
         </div>
       )}

@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 interface LayoutProps {
@@ -6,10 +5,22 @@ interface LayoutProps {
   title: string;
   onLogout: () => void;
   isAdmin?: boolean;
-  onNavigate?: (view: 'MAIN' | 'ADMIN') => void;
+  /** ヘッダー切替ボタンの行き先（管理者セッション時のみ表示） */
+  navTarget?: 'MAIN' | 'ADMIN';
+  onNavigate?: () => void;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, title, onLogout, isAdmin, onNavigate }) => {
+const Layout: React.FC<LayoutProps> = ({
+  children,
+  title,
+  onLogout,
+  isAdmin,
+  navTarget,
+  onNavigate,
+}) => {
+  const showNav = !!(isAdmin && onNavigate && navTarget);
+  const navLabel = navTarget === 'ADMIN' ? '管理者画面へ' : '一般画面へ';
+
   return (
     <div className="flex flex-col min-h-screen bg-slate-50">
       <header className="bg-indigo-600 text-white shadow-md sticky top-0 z-50">
@@ -19,15 +30,17 @@ const Layout: React.FC<LayoutProps> = ({ children, title, onLogout, isAdmin, onN
             <h1 className="text-sm sm:text-xl font-bold tracking-tight truncate">{title}</h1>
           </div>
           <div className="flex items-center space-x-2 sm:space-x-4 shrink-0">
-            {isAdmin && onNavigate && (
-               <button 
-                onClick={() => onNavigate('MAIN')}
-                className="hidden sm:block text-sm font-medium hover:text-indigo-200 transition"
+            {showNav && (
+              <button
+                type="button"
+                onClick={onNavigate}
+                className="text-xs sm:text-sm font-medium hover:text-indigo-200 transition whitespace-nowrap"
               >
-                一般画面へ
+                {navLabel}
               </button>
             )}
-            <button 
+            <button
+              type="button"
               onClick={onLogout}
               className="bg-indigo-700 hover:bg-indigo-800 px-2.5 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center space-x-2"
               title="ログアウト"

@@ -1,11 +1,11 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Layout from '../components/Layout';
 import GroupSelector from '../components/GroupSelector';
 import UserNoteButton, { hasUserNote } from '../components/UserNoteButton';
 import UserNoteModal from '../components/UserNoteModal';
 import { db } from '../services/database';
-import { User, Schedule, SystemConfig, AttendanceStatus, GroupId, Group, groupLabel } from '../types';
+import { User, Schedule, SystemConfig, AttendanceStatus, GroupId, Group, groupLabel, userMatchesQuery } from '../types';
 import { STATUS_COLORS, STATUS_LABELS, getStatusOptions } from '../constants';
 import {
   toDateKey,
@@ -49,35 +49,48 @@ const MainList: React.FC<MainListProps> = ({
   const initialPeriod = getSeasonDisplayPeriod(config.seasonStartDate, config.seasonEndDate);
   const [currentMonth, setCurrentMonth] = useState(initialPeriod.month);
   const [currentYear, setCurrentYear] = useState(initialPeriod.year);
+  const fetchSeqRef = useRef(0);
 
   useEffect(() => {
+    const seq = ++fetchSeqRef.current;
     const fetchData = async () => {
       setIsLoading(true);
-      const groupUsers = await db.getUsers(groupId);
-      const groupSchedules = await db.getSchedulesForMonth(
-        groupUsers.map(u => u.id),
-        currentYear,
-        currentMonth,
-        groupId
-      );
-      setUsers(groupUsers);
-      setSchedules(groupSchedules);
-      setIsLoading(false);
+      try {
+        const groupUsers = await db.getUsers(groupId);
+        const groupSchedules = await db.getSchedulesForMonth(
+          groupUsers.map((u) => u.id),
+          currentYear,
+          currentMonth,
+          groupId
+        );
+        if (seq !== fetchSeqRef.current) return;
+        setUsers(groupUsers);
+        setSchedules(groupSchedules);
+      } catch (err) {
+        console.error(err);
+        if (seq !== fetchSeqRef.current) return;
+        setUsers([]);
+        setSchedules([]);
+      } finally {
+        if (seq === fetchSeqRef.current) setIsLoading(false);
+      }
     };
-    fetchData();
+    void fetchData();
   }, [groupId, currentYear, currentMonth]);
 
   useEffect(() => {
     setNameQuery('');
+    setNoteUser(null);
   }, [groupId]);
 
+  const showEmployeeId = config.showEmployeeId !== false;
   const normalizedQuery = nameQuery.trim().toLocaleLowerCase('ja');
   const filteredUsers = useMemo(() => {
     if (!normalizedQuery) return users;
     return users.filter((u) =>
-      u.name.toLocaleLowerCase('ja').includes(normalizedQuery)
+      userMatchesQuery(u, nameQuery, { matchEmployeeId: showEmployeeId })
     );
-  }, [users, normalizedQuery]);
+  }, [users, normalizedQuery, nameQuery, showEmployeeId]);
 
   const days = daysInMonthWithinSeason(
     currentYear,
@@ -122,7 +135,13 @@ const MainList: React.FC<MainListProps> = ({
   const getDayName = (dayOfWeek: number) => ['日', '月', '火', '水', '木', '金', '土'][dayOfWeek];
 
   return (
-    <Layout title={`${currentGroupName}・出勤予定一覧`} onLogout={onLogout} isAdmin={isAdmin} onNavigate={onNavigateAdmin}>
+    <Layout
+      title={`${currentGroupName}・出勤予定一覧`}
+      onLogout={onLogout}
+      isAdmin={isAdmin}
+      navTarget="ADMIN"
+      onNavigate={onNavigateAdmin}
+    >
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="p-4 sm:p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-slate-50/50">
           <div className="flex flex-col sm:flex-row items-center gap-4">
@@ -154,7 +173,7 @@ const MainList: React.FC<MainListProps> = ({
 
           <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto sm:items-center">
             <label className="relative flex-1 sm:w-56">
-              <span className="sr-only">氏名で検索</span>
+              <span className="sr-only">{showEmployeeId ? '氏名・ユーザIDで検索' : '氏名で検索'}</span>
               <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none"></i>
               <input
                 type="text"
@@ -163,7 +182,7 @@ const MainList: React.FC<MainListProps> = ({
                 autoComplete="off"
                 value={nameQuery}
                 onChange={(e) => setNameQuery(e.target.value)}
-                placeholder="氏名で検索"
+                placeholder={showEmployeeId ? '氏名・ユーザIDで検索' : '氏名で検索'}
                 className="w-full pl-9 pr-9 py-2 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm font-bold shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400"
               />
               {nameQuery && (
@@ -177,15 +196,6 @@ const MainList: React.FC<MainListProps> = ({
                 </button>
               )}
             </label>
-            {isAdmin && (
-              <button
-                onClick={onNavigateAdmin}
-                className="flex-1 sm:flex-none px-4 py-2 text-sm font-bold text-indigo-600 bg-white border-2 border-indigo-100 rounded-xl hover:bg-indigo-50 transition flex items-center justify-center space-x-2 shadow-sm"
-              >
-                <i className="fas fa-tools"></i>
-                <span>管理者メニュー</span>
-              </button>
-            )}
           </div>
         </div>
 
@@ -209,8 +219,8 @@ const MainList: React.FC<MainListProps> = ({
           <table className="w-full text-sm text-left border-separate border-spacing-0">
             <thead className="text-slate-500 uppercase font-semibold">
               <tr>
-                <th className="px-1.5 sm:px-3 py-2 sm:py-3 w-[100px] min-w-[100px] max-w-[100px] sm:w-[132px] sm:min-w-[132px] sm:max-w-[132px] sticky top-0 left-0 bg-slate-50 z-30 border-b border-r border-slate-200 shadow-[2px_0_5px_rgba(0,0,0,0.05)] text-[11px] sm:text-sm">
-                  氏名
+                <th className="px-1.5 sm:px-3 py-2 sm:py-3 w-[108px] min-w-[108px] max-w-[108px] sm:w-[148px] sm:min-w-[148px] sm:max-w-[148px] sticky top-0 left-0 bg-slate-50 z-30 border-b border-r border-slate-200 shadow-[2px_0_5px_rgba(0,0,0,0.05)] text-[11px] sm:text-sm">
+                  {showEmployeeId ? 'ユーザID / 氏名' : '氏名'}
                 </th>
                 {days.map(day => {
                   const dow = getDayOfWeek(day);
@@ -230,9 +240,13 @@ const MainList: React.FC<MainListProps> = ({
             <tbody>
               {filteredUsers.map(user => (
                 <tr key={user.id} className="hover:bg-slate-50 transition group">
-                  <td className="px-1.5 sm:px-2.5 py-1.5 sm:py-2.5 font-medium text-slate-700 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-b border-r border-slate-200 shadow-[2px_0_5px_rgba(0,0,0,0.05)] w-[100px] min-w-[100px] max-w-[100px] sm:w-[132px] sm:min-w-[132px] sm:max-w-[132px]">
+                  <td className="px-1.5 sm:px-2.5 py-1.5 sm:py-2.5 font-medium text-slate-700 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-b border-r border-slate-200 shadow-[2px_0_5px_rgba(0,0,0,0.05)] w-[108px] min-w-[108px] max-w-[108px] sm:w-[148px] sm:min-w-[148px] sm:max-w-[148px]">
                     <div className="flex flex-col gap-1">
-                      {/* 備考アイコンは名前行に置かず、3〜4文字名が切れにくくする */}
+                      {showEmployeeId && user.employeeId ? (
+                        <span className="block truncate text-[10px] sm:text-[11px] font-bold text-slate-400 leading-tight" title={user.employeeId}>
+                          {user.employeeId}
+                        </span>
+                      ) : null}
                       <span className="block truncate text-xs sm:text-sm font-bold leading-tight tracking-tight" title={user.name}>
                         {user.name}
                       </span>
@@ -274,7 +288,7 @@ const MainList: React.FC<MainListProps> = ({
               {!isLoading && users.length > 0 && filteredUsers.length === 0 && (
                 <tr>
                   <td colSpan={Math.max(days.length, 1) + 1} className="px-4 py-12 text-center text-slate-400 font-medium">
-                    「{nameQuery.trim()}」に一致する氏名がありません
+                    「{nameQuery.trim()}」に一致する人がいません
                   </td>
                 </tr>
               )}

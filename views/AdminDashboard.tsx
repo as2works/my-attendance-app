@@ -7,7 +7,7 @@ import GroupsPanel from '../components/GroupsPanel';
 import UserNoteButton, { hasUserNote } from '../components/UserNoteButton';
 import UserNoteModal from '../components/UserNoteModal';
 import { db } from '../services/database';
-import { User, History, SystemConfig, Schedule, AttendanceStatus, Group, GroupId, groupLabel } from '../types';
+import { User, History, SystemConfig, Schedule, AttendanceStatus, Group, GroupId, groupLabel, userMatchesQuery, normalizeEmployeeId } from '../types';
 import { STATUS_COLORS } from '../constants';
 import {
   toDateKey,
@@ -17,6 +17,7 @@ import {
   mergeHolidays,
   getSeasonDisplayPeriod,
 } from '../services/calendarTone';
+import { exportAllAttendanceCsv } from '../services/exportAttendanceCsv';
 
 const OVERVIEW_SPLIT_KEY = 'kss-admin-overview-split';
 /** 予定・履歴パネルそれぞれの最小高さ（px） */
@@ -44,6 +45,7 @@ interface AdminDashboardProps {
   groupId: GroupId;
   onGroupChange: (groupId: GroupId) => void;
   currentLinkId: string;
+  workspaceName?: string;
 }
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -55,6 +57,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   groupId,
   onGroupChange,
   currentLinkId,
+  workspaceName,
 }) => {
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'USERS' | 'GROUPS' | 'CONFIG' | 'LINKS'>('OVERVIEW');
   const [users, setUsers] = useState<User[]>([]);
@@ -62,6 +65,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [newUserName, setNewUserName] = useState('');
+  const [newUserEmployeeId, setNewUserEmployeeId] = useState('');
   const [newUserGroupId, setNewUserGroupId] = useState(groupId);
   const [showProcessedHistory, setShowProcessedHistory] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -69,24 +73,30 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [currentYear, setCurrentYear] = useState(() => new Date().getFullYear());
   const [holidayDraft, setHolidayDraft] = useState('');
   const [configSaveNotice, setConfigSaveNotice] = useState<string | null>(null);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [noteUser, setNoteUser] = useState<User | null>(null);
   const [moveUserId, setMoveUserId] = useState<string | null>(null);
   const [moveTargetId, setMoveTargetId] = useState('');
-  const [renameUserId, setRenameUserId] = useState<string | null>(null);
-  const [renameDraft, setRenameDraft] = useState('');
-  const [renameBusy, setRenameBusy] = useState(false);
+  const [editUserId, setEditUserId] = useState<string | null>(null);
+  const [editNameDraft, setEditNameDraft] = useState('');
+  const [editEmployeeIdDraft, setEditEmployeeIdDraft] = useState('');
+  const [editUserBusy, setEditUserBusy] = useState(false);
   const [nameQuery, setNameQuery] = useState('');
   const [unprocessedCounts, setUnprocessedCounts] = useState<Record<string, number>>({});
   const [overviewTopPercent, setOverviewTopPercent] = useState(readStoredSplitPercent);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const overviewSplitRef = useRef<HTMLDivElement>(null);
   const overviewDraggingRef = useRef(false);
   const overviewTopPercentRef = useRef(overviewTopPercent);
   overviewTopPercentRef.current = overviewTopPercent;
   const seasonPeriodInitializedRef = useRef(false);
+  const refreshSeqRef = useRef(0);
 
   const currentGroupName = groupLabel(groups, groupId);
   const otherGroups = groups.filter((g) => g.id !== groupId);
   const holidays = config?.holidays || [];
+  const showEmployeeId = config?.showEmployeeId !== false;
   const normalizedQuery = nameQuery.trim().toLocaleLowerCase('ja');
 
   const updateOverviewSplitFromClientY = (clientY: number) => {
@@ -119,23 +129,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const filteredUsers = useMemo(() => {
     if (!normalizedQuery) return users;
     return users.filter((u) =>
-      u.name.toLocaleLowerCase('ja').includes(normalizedQuery)
+      userMatchesQuery(u, nameQuery, { matchEmployeeId: showEmployeeId })
     );
-  }, [users, normalizedQuery]);
+  }, [users, normalizedQuery, nameQuery, showEmployeeId]);
+
+  const matchingUserIds = useMemo(() => {
+    if (!normalizedQuery) return null;
+    return new Set(filteredUsers.map((u) => u.id));
+  }, [filteredUsers, normalizedQuery]);
 
   const visibleHistories = useMemo(() => {
     const base = showProcessedHistory
       ? histories
       : histories.filter((h) => !h.isProcessed);
-    if (!normalizedQuery) return base;
-    return base.filter((h) =>
-      h.userName.toLocaleLowerCase('ja').includes(normalizedQuery)
+    if (!normalizedQuery || !matchingUserIds) return base;
+    return base.filter(
+      (h) =>
+        matchingUserIds.has(h.userId) ||
+        h.userName.toLocaleLowerCase('ja').includes(normalizedQuery)
     );
-  }, [histories, showProcessedHistory, normalizedQuery]);
+  }, [histories, showProcessedHistory, normalizedQuery, matchingUserIds]);
 
   useEffect(() => {
     setNewUserGroupId(groupId);
     setNameQuery('');
+    setNoteUser(null);
+    setEditUserId(null);
+    setMoveUserId(null);
   }, [groupId]);
 
   const refreshUnprocessedCounts = async () => {
@@ -147,30 +167,39 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const refreshData = async (year = currentYear, month = currentMonth) => {
+    const seq = ++refreshSeqRef.current;
     setIsUpdating(true);
-    const groupUsers = await db.getUsers(groupId);
-    const [h, s, c] = await Promise.all([
-      db.getHistories(groupId, { includeProcessed: showProcessedHistory }),
-      db.getSchedulesForMonth(groupUsers.map(u => u.id), year, month, groupId),
-      db.getConfig(),
-    ]);
-    setUsers(groupUsers);
-    setHistories(h);
-    setSchedules(s);
-    setConfig(c);
-    setIsUpdating(false);
-    void refreshUnprocessedCounts();
+    setLoadError(null);
+    try {
+      const groupUsers = await db.getUsers(groupId);
+      const [h, s, c] = await Promise.all([
+        db.getHistories(groupId, { includeProcessed: showProcessedHistory }),
+        db.getSchedulesForMonth(groupUsers.map((u) => u.id), year, month, groupId),
+        db.getConfig(),
+      ]);
+      if (seq !== refreshSeqRef.current) return;
+      setUsers(groupUsers);
+      setHistories(h);
+      setSchedules(s);
+      setConfig(c);
 
-    if (!seasonPeriodInitializedRef.current && c?.seasonStartDate && c?.seasonEndDate) {
-      seasonPeriodInitializedRef.current = true;
-      const period = getSeasonDisplayPeriod(c.seasonStartDate, c.seasonEndDate);
-      if (period.month !== month || period.year !== year) {
-        setCurrentMonth(period.month);
-        setCurrentYear(period.year);
+      if (!seasonPeriodInitializedRef.current && c?.seasonStartDate && c?.seasonEndDate) {
+        seasonPeriodInitializedRef.current = true;
+        const period = getSeasonDisplayPeriod(c.seasonStartDate, c.seasonEndDate);
+        if (period.month !== month || period.year !== year) {
+          setCurrentMonth(period.month);
+          setCurrentYear(period.year);
+        }
       }
+      void refreshUnprocessedCounts();
+    } catch (err) {
+      console.error(err);
+      if (seq !== refreshSeqRef.current) return;
+      setLoadError('データの読み込みに失敗しました。再読み込みしてください。');
+    } finally {
+      if (seq === refreshSeqRef.current) setIsUpdating(false);
     }
   };
-
   useEffect(() => {
     refreshData();
   }, [groupId, showProcessedHistory, currentYear, currentMonth]);
@@ -182,15 +211,26 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleAddUser = async () => {
     if (!newUserName.trim()) return;
     const name = newUserName.trim();
+    const employeeId = normalizeEmployeeId(newUserEmployeeId);
     const targetGroupId = newUserGroupId || groupId;
-    await db.saveUser({ id: '', name, groupId: targetGroupId });
-    setNewUserName('');
-    if (targetGroupId !== groupId) {
-      onGroupChange(targetGroupId);
-    } else {
-      refreshData();
+    try {
+      await db.saveUser({ id: '', name, employeeId, groupId: targetGroupId });
+      setNewUserName('');
+      setNewUserEmployeeId('');
+      if (targetGroupId !== groupId) {
+        onGroupChange(targetGroupId);
+      } else {
+        refreshData();
+      }
+      alert(`${groupLabel(groups, targetGroupId)}に「${name}」を追加しました。`);
+    } catch (err: any) {
+      console.error(err);
+      if (String(err?.message || '').includes('DUPLICATE_EMPLOYEE_ID')) {
+        alert('同じユーザIDの利用者がすでにいます。');
+      } else {
+        alert('追加に失敗しました。');
+      }
     }
-    alert(`${groupLabel(groups, targetGroupId)}に「${name}」を追加しました。`);
   };
 
   const handleDeleteUser = async (id: string) => {
@@ -201,34 +241,40 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const openRenameUser = (user: User) => {
-    setRenameUserId(user.id);
-    setRenameDraft(user.name);
+  const openEditUser = (user: User) => {
+    setEditUserId(user.id);
+    setEditNameDraft(user.name);
+    setEditEmployeeIdDraft(user.employeeId || '');
   };
 
-  const confirmRenameUser = async () => {
-    const user = users.find((u) => u.id === renameUserId);
-    if (!user || renameBusy) return;
-    const name = renameDraft.trim();
+  const confirmEditUser = async () => {
+    const user = users.find((u) => u.id === editUserId);
+    if (!user || editUserBusy) return;
+    const name = editNameDraft.trim();
+    const employeeId = normalizeEmployeeId(editEmployeeIdDraft);
     if (!name) {
       alert('氏名を入力してください。');
       return;
     }
-    if (name === user.name) {
-      setRenameUserId(null);
+    if (name === user.name && employeeId === normalizeEmployeeId(user.employeeId)) {
+      setEditUserId(null);
       return;
     }
-    setRenameBusy(true);
+    setEditUserBusy(true);
     try {
-      await db.saveUser({ id: user.id, name, groupId: user.groupId });
-      setRenameUserId(null);
+      await db.saveUser({ id: user.id, name, employeeId, groupId: user.groupId });
+      setEditUserId(null);
       await refreshData();
-      alert(`「${user.name}」を「${name}」に変更しました。`);
-    } catch (err) {
+      alert('利用者情報を更新しました。');
+    } catch (err: any) {
       console.error(err);
-      alert('氏名の変更に失敗しました。sandbox のデプロイ完了後にもう一度お試しください。');
+      if (String(err?.message || '').includes('DUPLICATE_EMPLOYEE_ID')) {
+        alert('同じユーザIDの利用者がすでにいます。');
+      } else {
+        alert('更新に失敗しました。sandbox のデプロイ完了後にもう一度お試しください。');
+      }
     } finally {
-      setRenameBusy(false);
+      setEditUserBusy(false);
     }
   };
 
@@ -275,7 +321,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleConfigSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!config) return;
-    await persistConfig(config, '期間設定を保存しました');
+    if (config.seasonStartDate > config.seasonEndDate) {
+      alert('シーズン開始日は終了日以前にしてください。');
+      return;
+    }
+    await persistConfig(config, '期間・表示設定を保存しました');
   };
 
   const showConfigSaved = (message: string) => {
@@ -323,6 +373,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     );
   };
 
+  const handleExportCsv = async () => {
+    if (!config || exportBusy) return;
+    setExportBusy(true);
+    setExportNotice(null);
+    try {
+      const result = await exportAllAttendanceCsv({
+        groups,
+        seasonStartDate: config.seasonStartDate,
+        seasonEndDate: config.seasonEndDate,
+      });
+      const message = `${result.filename} をダウンロードしました（${result.userCount}人・${result.dateCount}日）`;
+      setExportNotice(message);
+      window.setTimeout(() => {
+        setExportNotice((current) => (current === message ? null : current));
+      }, 4000);
+    } catch (err: any) {
+      console.error(err);
+      if (String(err?.message).includes('EMPTY_SEASON')) {
+        alert('シーズン開始日・終了日が正しく設定されていません。期間を確認してください。');
+      } else {
+        alert('CSVのエクスポートに失敗しました。通信状況を確認してもう一度お試しください。');
+      }
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
   const handleMonthChange = (offset: number) => {
     const newDate = new Date(currentYear, currentMonth + offset, 1);
     setCurrentYear(newDate.getFullYear());
@@ -348,10 +425,46 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     .filter((g) => g.id !== groupId)
     .reduce((sum, g) => sum + (unprocessedCounts[g.id] ?? 0), 0);
 
+  if (loadError && !config) {
+    return (
+      <Layout title="管理者パネル" onLogout={onLogout}>
+        <div className="max-w-md mx-auto mt-16 bg-white p-8 rounded-3xl border border-rose-100 text-center shadow-sm">
+          <i className="fas fa-exclamation-triangle text-4xl text-rose-500 mb-4"></i>
+          <p className="text-slate-700 font-bold mb-6">{loadError}</p>
+          <button
+            type="button"
+            onClick={() => void refreshData()}
+            className="w-full bg-slate-800 text-white font-bold py-3 rounded-2xl hover:bg-slate-900"
+          >
+            再試行
+          </button>
+        </div>
+      </Layout>
+    );
+  }
+
   if (!config) return null;
 
   return (
-    <Layout title={`管理者パネル（${currentGroupName}）`} onLogout={onLogout} isAdmin onNavigate={onNavigateGeneral}>
+    <Layout
+      title={`管理者パネル${workspaceName ? `・${workspaceName}` : ''}（${currentGroupName}）`}
+      onLogout={onLogout}
+      isAdmin
+      navTarget="MAIN"
+      onNavigate={onNavigateGeneral}
+    >
+      {loadError && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900">
+          <span>{loadError}</span>
+          <button
+            type="button"
+            onClick={() => void refreshData()}
+            className="px-3 py-1 rounded-lg bg-amber-600 text-white text-xs font-black"
+          >
+            再試行
+          </button>
+        </div>
+      )}
       <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <GroupSelector
@@ -439,7 +552,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <span className="truncate">{currentGroupName}・出勤予定一覧</span>
                   </h3>
                   <label className="relative flex-1 min-w-[200px] order-3 sm:order-none w-full sm:w-auto">
-                    <span className="sr-only">氏名で検索</span>
+                    <span className="sr-only">{showEmployeeId ? '氏名・ユーザIDで検索' : '氏名で検索'}</span>
                     <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none"></i>
                     <input
                       type="text"
@@ -448,7 +561,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       autoComplete="off"
                       value={nameQuery}
                       onChange={(e) => setNameQuery(e.target.value)}
-                      placeholder="氏名で検索（履歴の氏名タップでも可）"
+                      placeholder={showEmployeeId ? '氏名・ユーザIDで検索（履歴タップ可）' : '氏名で検索（履歴タップ可）'}
                       className="w-full pl-9 pr-9 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm font-bold shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 placeholder:font-medium placeholder:text-slate-400"
                     />
                     {nameQuery && (
@@ -478,7 +591,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <table className="w-full text-xs text-left border-separate border-spacing-0">
                     <thead className="sticky top-0 z-30 bg-slate-50 text-slate-500 uppercase font-bold shadow-sm">
                       <tr>
-                        <th className="px-3 py-3 min-w-[120px] sticky left-0 top-0 bg-slate-50 z-40 border-r border-b border-slate-200">氏名</th>
+                        <th className="px-3 py-3 min-w-[140px] sticky left-0 top-0 bg-slate-50 z-40 border-r border-b border-slate-200">
+                          {showEmployeeId ? 'ユーザID / 氏名' : '氏名'}
+                        </th>
                         {daysArray.map(day => {
                           const dow = getDayOfWeek(day);
                           const tone = getDayTone(toDateKey(currentYear, currentMonth, day), holidays);
@@ -496,7 +611,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <tr key={user.id} className="hover:bg-slate-50 transition group">
                           <td className="px-3 py-3 font-bold text-slate-700 sticky left-0 bg-white z-10 border-r border-slate-200 shadow-[1px_0_0_rgba(0,0,0,0.1)]">
                             <div className="flex items-center gap-1.5 min-w-0">
-                              <span className="truncate">{user.name}</span>
+                              <div className="min-w-0">
+                                {showEmployeeId && user.employeeId ? (
+                                  <div className="text-[10px] font-bold text-slate-400 truncate leading-tight">
+                                    {user.employeeId}
+                                  </div>
+                                ) : null}
+                                <div className="truncate">{user.name}</div>
+                              </div>
                               <UserNoteButton
                                 hasNote={hasUserNote(user.note)}
                                 onClick={() => setNoteUser(user)}
@@ -640,33 +762,51 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="space-y-6 animate-in slide-in-from-right-4 duration-300 overflow-y-auto pr-2">
               <div className="flex justify-between items-center gap-4 flex-wrap">
                 <h3 className="text-xl font-black text-slate-800">{currentGroupName}の利用者名簿</h3>
-                <p className="text-xs text-slate-400 font-bold">氏名変更・並べ替え・グループ移動・削除ができます</p>
+                <p className="text-xs text-slate-400 font-bold">
+                  {showEmployeeId ? 'ユーザID・氏名' : '氏名'}の編集・並べ替え・グループ移動・削除ができます
+                </p>
               </div>
 
-              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-3 shrink-0">
-                <input
-                  type="text"
-                  value={newUserName}
-                  onChange={(e) => setNewUserName(e.target.value)}
-                  placeholder="追加する名前"
-                  className="flex-grow px-4 py-3 rounded-xl border border-slate-300 bg-white text-slate-900 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 focus:outline-none transition-all shadow-sm font-bold"
-                />
-                <select
-                  value={newUserGroupId}
-                  onChange={(e) => setNewUserGroupId(e.target.value)}
-                  className="px-4 py-3 rounded-xl border border-slate-300 bg-white text-slate-800 font-bold focus:outline-none focus:ring-4 focus:ring-indigo-100"
-                >
-                  {groups.map((g) => (
-                    <option key={g.id} value={g.id}>{g.name}</option>
-                  ))}
-                </select>
-                <button
-                  onClick={handleAddUser}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-black px-8 py-3 rounded-xl transition shadow-lg shadow-indigo-200 whitespace-nowrap flex items-center justify-center gap-2"
-                >
-                  <i className="fas fa-plus"></i>
-                  <span>追加</span>
-                </button>
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-3 shrink-0">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  {showEmployeeId && (
+                    <input
+                      type="text"
+                      value={newUserEmployeeId}
+                      onChange={(e) => setNewUserEmployeeId(e.target.value)}
+                      placeholder="ユーザID（任意）"
+                      className="sm:w-36 px-4 py-3 rounded-xl border border-slate-300 bg-white text-slate-900 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 focus:outline-none transition-all shadow-sm font-bold"
+                    />
+                  )}
+                  <input
+                    type="text"
+                    value={newUserName}
+                    onChange={(e) => setNewUserName(e.target.value)}
+                    placeholder="追加する名前"
+                    className="flex-grow px-4 py-3 rounded-xl border border-slate-300 bg-white text-slate-900 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 focus:outline-none transition-all shadow-sm font-bold"
+                  />
+                  <select
+                    value={newUserGroupId}
+                    onChange={(e) => setNewUserGroupId(e.target.value)}
+                    className="px-4 py-3 rounded-xl border border-slate-300 bg-white text-slate-800 font-bold focus:outline-none focus:ring-4 focus:ring-indigo-100"
+                  >
+                    {groups.map((g) => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleAddUser}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-black px-8 py-3 rounded-xl transition shadow-lg shadow-indigo-200 whitespace-nowrap flex items-center justify-center gap-2"
+                  >
+                    <i className="fas fa-plus"></i>
+                    <span>追加</span>
+                  </button>
+                </div>
+                {showEmployeeId && (
+                  <p className="text-[11px] text-slate-400 font-medium">
+                    ユーザIDは出勤・給与システム連携用です。未設定でも追加できます。
+                  </p>
+                )}
               </div>
 
               <div className="bg-white rounded-3xl border border-slate-200 divide-y divide-slate-100 overflow-hidden shadow-sm">
@@ -676,7 +816,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 font-black border border-slate-200 shrink-0">
                         {index + 1}
                       </div>
-                      <span className="font-black text-slate-700 text-lg truncate">{u.name}</span>
+                      <div className="min-w-0">
+                        {showEmployeeId && (
+                          u.employeeId ? (
+                            <div className="text-xs font-bold text-slate-400 truncate">{u.employeeId}</div>
+                          ) : (
+                            <div className="text-xs font-bold text-slate-300">ユーザID未設定</div>
+                          )
+                        )}
+                        <div className="font-black text-slate-700 text-lg truncate">{u.name}</div>
+                      </div>
                       <UserNoteButton
                         hasNote={hasUserNote(u.note)}
                         alwaysShow
@@ -706,11 +855,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                       <button
                         type="button"
-                        onClick={() => openRenameUser(u)}
+                        onClick={() => openEditUser(u)}
                         className="px-3 h-10 text-xs font-bold text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-xl transition border border-slate-200"
-                        title="氏名を変更"
+                        title={showEmployeeId ? 'ユーザID・氏名を編集' : '氏名を編集'}
                       >
-                        氏名変更
+                        編集
                       </button>
 
                       <button
@@ -782,12 +931,26 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     />
                   </div>
                 </div>
+                <label className="flex items-start gap-3 p-4 rounded-2xl border border-slate-100 bg-slate-50/80 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={config.showEmployeeId !== false}
+                    onChange={(e) => setConfig({ ...config, showEmployeeId: e.target.checked })}
+                    className="mt-1 w-5 h-5 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500"
+                  />
+                  <span>
+                    <span className="block text-sm font-black text-slate-800">ユーザIDを表示する</span>
+                    <span className="block text-xs text-slate-500 font-medium mt-0.5 leading-relaxed">
+                      OFFにすると一覧・利用者管理からユーザID列を隠します（初期はON）。CSVのユーザID列は残ります。
+                    </span>
+                  </span>
+                </label>
                 <button
                   type="submit"
                   className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black py-4 rounded-2xl transition shadow-lg shadow-emerald-100 flex items-center justify-center gap-3 active:scale-[0.98]"
                 >
                   <i className="fas fa-save"></i>
-                  <span>期間設定を保存する</span>
+                  <span>期間・表示設定を保存する</span>
                 </button>
               </form>
 
@@ -835,6 +998,41 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
+              <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-base font-black text-slate-800">出勤データ CSV エクスポート</h4>
+                    <p className="text-xs text-slate-500 font-medium mt-1 leading-relaxed">
+                      全グループの全員を表示順で出力します。期間はシーズン開始日（{config.seasonStartDate}）〜終了日（{config.seasonEndDate}）。列は ユーザID・名前・各日付です（Excel / VBA 取込向け UTF-8）。
+                    </p>
+                  </div>
+                  {exportNotice && (
+                    <p className="text-sm font-bold text-emerald-600 animate-in fade-in duration-200">
+                      <i className="fas fa-check-circle mr-1.5"></i>
+                      {exportNotice}
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleExportCsv}
+                  disabled={exportBusy}
+                  className="w-full bg-slate-800 hover:bg-slate-900 disabled:bg-slate-400 text-white font-black py-4 rounded-2xl transition shadow-lg flex items-center justify-center gap-3 active:scale-[0.98]"
+                >
+                  {exportBusy ? (
+                    <>
+                      <i className="fas fa-sync fa-spin"></i>
+                      <span>作成中…</span>
+                    </>
+                  ) : (
+                    <>
+                      <i className="fas fa-file-csv"></i>
+                      <span>全員分を CSV ダウンロード</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
               <div className="p-6 bg-indigo-50/50 rounded-2xl border border-indigo-100 flex gap-4">
                 <i className="fas fa-info-circle text-indigo-500 text-xl pt-1"></i>
                 <p className="text-sm text-indigo-900 leading-relaxed font-bold">
@@ -866,21 +1064,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         />
       )}
 
-      {renameUserId && (
+      {editUserId && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 space-y-5 border border-slate-100">
-            <h4 className="text-lg font-black text-slate-800">氏名を変更</h4>
+            <h4 className="text-lg font-black text-slate-800">利用者を編集</h4>
             <p className="text-sm text-slate-600 font-medium">
-              名簿の表示名を変更します（変更履歴には載せません）。
+              {showEmployeeId ? 'ユーザID・氏名' : '氏名'}の変更は変更履歴には載せません。
             </p>
+            {showEmployeeId && (
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">ユーザID</label>
+                <input
+                  type="text"
+                  value={editEmployeeIdDraft}
+                  onChange={(e) => setEditEmployeeIdDraft(e.target.value)}
+                  placeholder="出勤・給与システム連携用（任意）"
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 font-bold focus:outline-none focus:ring-4 focus:ring-indigo-100"
+                />
+              </div>
+            )}
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">新しい氏名</label>
+              <label className="block text-sm font-bold text-slate-700 mb-2">氏名</label>
               <input
                 type="text"
-                value={renameDraft}
-                onChange={(e) => setRenameDraft(e.target.value)}
+                value={editNameDraft}
+                onChange={(e) => setEditNameDraft(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') void confirmRenameUser();
+                  if (e.key === 'Enter') void confirmEditUser();
                 }}
                 autoFocus
                 className="w-full px-4 py-3 rounded-xl border border-slate-200 font-bold focus:outline-none focus:ring-4 focus:ring-indigo-100"
@@ -889,19 +1099,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setRenameUserId(null)}
-                disabled={renameBusy}
+                onClick={() => setEditUserId(null)}
+                disabled={editUserBusy}
                 className="flex-1 py-3 rounded-xl bg-slate-100 font-bold"
               >
                 やめる
               </button>
               <button
                 type="button"
-                onClick={() => void confirmRenameUser()}
-                disabled={renameBusy || !renameDraft.trim()}
+                onClick={() => void confirmEditUser()}
+                disabled={editUserBusy || !editNameDraft.trim()}
                 className="flex-1 py-3 rounded-xl bg-indigo-600 text-white font-black disabled:opacity-40"
               >
-                {renameBusy ? '変更中…' : '変更する'}
+                {editUserBusy ? '保存中…' : '保存する'}
               </button>
             </div>
           </div>

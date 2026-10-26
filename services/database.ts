@@ -10,6 +10,8 @@ import {
   Group,
   AccessLink,
   AccessLinkRole,
+  Workspace,
+  WorkspaceId,
 } from '../types';
 
 const client = generateClient<Schema>();
@@ -65,7 +67,17 @@ async function invoke<T>(action: string, payload?: unknown, tokenOverride?: stri
 }
 
 export const db = {
-  ensureSeed: async () => invoke<{ ready: boolean }>('ensureSeed', undefined, null),
+  ensureSeed: async (options?: { discloseBootstrapLinks?: boolean }) =>
+    invoke<{
+      ready: boolean;
+      ownerLinkId?: string;
+      defaultAdminLinkId?: string | null;
+      defaultWorkspaceId?: string;
+    }>(
+      'ensureSeed',
+      options?.discloseBootstrapLinks ? { discloseBootstrapLinks: true } : {},
+      null
+    ),
 
   getUsers: async (groupId?: GroupId): Promise<User[]> =>
     invoke<User[]>('getUsers', { groupId }),
@@ -128,6 +140,7 @@ export const db = {
     return {
       ...config,
       holidays: Array.isArray(config.holidays) ? config.holidays : [],
+      showEmployeeId: config.showEmployeeId !== false,
     };
   },
 
@@ -135,8 +148,37 @@ export const db = {
     await invoke('saveConfig', {
       ...config,
       holidays: Array.isArray(config.holidays) ? config.holidays : [],
+      showEmployeeId: config.showEmployeeId !== false,
     });
   },
+
+  getWorkspaceMeta: async (): Promise<{ id: string; name: string; note: string }> =>
+    invoke('getWorkspaceMeta'),
+
+  listWorkspaces: async (): Promise<Workspace[]> => invoke<Workspace[]>('listWorkspaces'),
+
+  createWorkspace: async (params: {
+    name: string;
+    note?: string;
+  }): Promise<Workspace & { reissuePassword?: string }> =>
+    invoke<Workspace & { reissuePassword?: string }>('createWorkspace', params),
+
+  rotateReissuePassword: async (currentPassword: string): Promise<{ reissuePassword: string }> =>
+    invoke<{ reissuePassword: string }>('rotateReissuePassword', { currentPassword }),
+
+  updateWorkspace: async (params: {
+    id: WorkspaceId;
+    name?: string;
+    note?: string;
+  }): Promise<Workspace> => invoke<Workspace>('updateWorkspace', params),
+
+  deleteWorkspace: async (id: WorkspaceId): Promise<boolean> =>
+    invoke('deleteWorkspace', { id }),
+
+  reissueWorkspaceAdminLink: async (params: {
+    workspaceId: WorkspaceId;
+    password: string;
+  }): Promise<AccessLink> => invoke<AccessLink>('reissueWorkspaceAdminLink', params),
 
   listGroups: async (): Promise<Group[]> => invoke<Group[]>('listGroups'),
 
