@@ -36,9 +36,17 @@ function readStoredSplitPercent(): number {
   return OVERVIEW_SPLIT_DEFAULT;
 }
 
+type RefreshScope = {
+  users?: boolean;
+  histories?: boolean;
+  schedules?: boolean;
+  config?: boolean;
+  counts?: boolean;
+};
+
 interface AdminDashboardProps {
   onLogout: () => void;
-  onConfigUpdate: () => void;
+  onConfigUpdate: (next?: SystemConfig) => void | Promise<void>;
   onNavigateGeneral: () => void;
   groups: Group[];
   onGroupsChange: (groups?: Group[]) => void | Promise<void>;
@@ -46,6 +54,19 @@ interface AdminDashboardProps {
   onGroupChange: (groupId: GroupId) => void;
   currentLinkId: string;
   workspaceName?: string;
+  /** bootstrapAdmin からの初回 OVERVIEW データ */
+  initialData?: {
+    users: User[];
+    histories: History[];
+    schedules: Schedule[];
+    config: SystemConfig;
+    year: number;
+    month: number;
+    unprocessedCounts: Record<string, number>;
+  } | null;
+  /** 一般画面から戻ったときに OVERVIEW を軽量再取得 */
+  softRefreshToken?: number;
+  syncDocumentTitle?: boolean;
 }
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -58,19 +79,34 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onGroupChange,
   currentLinkId,
   workspaceName,
+  initialData = null,
+  softRefreshToken = 0,
+  syncDocumentTitle = true,
 }) => {
+  const hasBootData = !!initialData && initialData.year != null && initialData.month != null;
+
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'USERS' | 'GROUPS' | 'CONFIG' | 'LINKS'>('OVERVIEW');
-  const [users, setUsers] = useState<User[]>([]);
-  const [histories, setHistories] = useState<History[]>([]);
-  const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [config, setConfig] = useState<SystemConfig | null>(null);
+  const [users, setUsers] = useState<User[]>(() => (hasBootData ? initialData!.users : []));
+  const [histories, setHistories] = useState<History[]>(() =>
+    hasBootData ? initialData!.histories : []
+  );
+  const [schedules, setSchedules] = useState<Schedule[]>(() =>
+    hasBootData ? initialData!.schedules : []
+  );
+  const [config, setConfig] = useState<SystemConfig | null>(() =>
+    hasBootData ? initialData!.config : null
+  );
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmployeeId, setNewUserEmployeeId] = useState('');
   const [newUserGroupId, setNewUserGroupId] = useState(groupId);
   const [showProcessedHistory, setShowProcessedHistory] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [currentMonth, setCurrentMonth] = useState(() => new Date().getMonth());
-  const [currentYear, setCurrentYear] = useState(() => new Date().getFullYear());
+  const [isUpdating, setIsUpdating] = useState(!hasBootData);
+  const [currentMonth, setCurrentMonth] = useState(() =>
+    hasBootData ? initialData!.month : new Date().getMonth()
+  );
+  const [currentYear, setCurrentYear] = useState(() =>
+    hasBootData ? initialData!.year : new Date().getFullYear()
+  );
   const [holidayDraft, setHolidayDraft] = useState('');
   const [configSaveNotice, setConfigSaveNotice] = useState<string | null>(null);
   const [exportBusy, setExportBusy] = useState(false);
@@ -83,15 +119,32 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [editEmployeeIdDraft, setEditEmployeeIdDraft] = useState('');
   const [editUserBusy, setEditUserBusy] = useState(false);
   const [nameQuery, setNameQuery] = useState('');
-  const [unprocessedCounts, setUnprocessedCounts] = useState<Record<string, number>>({});
+  const [unprocessedCounts, setUnprocessedCounts] = useState<Record<string, number>>(() =>
+    hasBootData ? initialData!.unprocessedCounts || {} : {}
+  );
   const [overviewTopPercent, setOverviewTopPercent] = useState(readStoredSplitPercent);
   const [loadError, setLoadError] = useState<string | null>(null);
   const overviewSplitRef = useRef<HTMLDivElement>(null);
   const overviewDraggingRef = useRef(false);
   const overviewTopPercentRef = useRef(overviewTopPercent);
   overviewTopPercentRef.current = overviewTopPercent;
-  const seasonPeriodInitializedRef = useRef(false);
+  const seasonPeriodInitializedRef = useRef(hasBootData);
   const refreshSeqRef = useRef(0);
+  const usersRef = useRef(users);
+  usersRef.current = users;
+  /** groupId|year|month|showProcessed=0 を一度だけスキップ */
+  const consumedInitialKeyRef = useRef<string | null>(
+    hasBootData ? `${groupId}|${initialData!.year}|${initialData!.month}|0` : null
+  );
+  const skipCountsOnMountRef = useRef(hasBootData);
+  const refreshDepsRef = useRef({
+    groupId,
+    year: hasBootData ? initialData!.year : currentYear,
+    month: hasBootData ? initialData!.month : currentMonth,
+    showProcessed: false,
+  });
+  const softRefreshSeenRef = useRef(softRefreshToken);
+  const [linksEverOpened, setLinksEverOpened] = useState(false);
 
   const currentGroupName = groupLabel(groups, groupId);
   const otherGroups = groups.filter((g) => g.id !== groupId);
@@ -166,32 +219,69 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const refreshData = async (year = currentYear, month = currentMonth) => {
+  const refreshData = async (
+    year = currentYear,
+    month = currentMonth,
+    scope: RefreshScope = {}
+  ) => {
+    const want = {
+      users: scope.users !== false,
+      histories: scope.histories !== false,
+      schedules: scope.schedules !== false,
+      config: scope.config !== false,
+      counts: scope.counts !== false,
+    };
     const seq = ++refreshSeqRef.current;
     setIsUpdating(true);
     setLoadError(null);
     try {
-      const groupUsers = await db.getUsers(groupId);
-      const [h, s, c] = await Promise.all([
-        db.getHistories(groupId, { includeProcessed: showProcessedHistory }),
-        db.getSchedulesForMonth(groupUsers.map((u) => u.id), year, month, groupId),
-        db.getConfig(),
-      ]);
-      if (seq !== refreshSeqRef.current) return;
-      setUsers(groupUsers);
-      setHistories(h);
-      setSchedules(s);
-      setConfig(c);
-
-      if (!seasonPeriodInitializedRef.current && c?.seasonStartDate && c?.seasonEndDate) {
-        seasonPeriodInitializedRef.current = true;
-        const period = getSeasonDisplayPeriod(c.seasonStartDate, c.seasonEndDate);
-        if (period.month !== month || period.year !== year) {
-          setCurrentMonth(period.month);
-          setCurrentYear(period.year);
-        }
+      let groupUsers = usersRef.current;
+      if (want.users) {
+        groupUsers = await db.getUsers(groupId);
+        if (seq !== refreshSeqRef.current) return;
+        setUsers(groupUsers);
       }
-      void refreshUnprocessedCounts();
+
+      const parallel: Promise<void>[] = [];
+      if (want.histories) {
+        parallel.push(
+          db.getHistories(groupId, { includeProcessed: showProcessedHistory }).then((h) => {
+            if (seq !== refreshSeqRef.current) return;
+            setHistories(h);
+          })
+        );
+      }
+      if (want.schedules) {
+        const ids = groupUsers.map((u) => u.id);
+        parallel.push(
+          (ids.length
+            ? db.getSchedulesForMonth(ids, year, month, groupId)
+            : Promise.resolve([] as Schedule[])
+          ).then((s) => {
+            if (seq !== refreshSeqRef.current) return;
+            setSchedules(s);
+          })
+        );
+      }
+      if (want.config) {
+        parallel.push(
+          db.getConfig().then((c) => {
+            if (seq !== refreshSeqRef.current) return;
+            setConfig(c);
+            if (!seasonPeriodInitializedRef.current && c?.seasonStartDate && c?.seasonEndDate) {
+              seasonPeriodInitializedRef.current = true;
+              const period = getSeasonDisplayPeriod(c.seasonStartDate, c.seasonEndDate);
+              if (period.month !== month || period.year !== year) {
+                setCurrentMonth(period.month);
+                setCurrentYear(period.year);
+              }
+            }
+          })
+        );
+      }
+      if (parallel.length) await Promise.all(parallel);
+      if (seq !== refreshSeqRef.current) return;
+      if (want.counts) void refreshUnprocessedCounts();
     } catch (err) {
       console.error(err);
       if (seq !== refreshSeqRef.current) return;
@@ -200,13 +290,73 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       if (seq === refreshSeqRef.current) setIsUpdating(false);
     }
   };
+
   useEffect(() => {
-    refreshData();
+    if (activeTab === 'LINKS') setLinksEverOpened(true);
+  }, [activeTab]);
+
+  useEffect(() => {
+    const key = `${groupId}|${currentYear}|${currentMonth}|${showProcessedHistory ? 1 : 0}`;
+    if (consumedInitialKeyRef.current === key) {
+      consumedInitialKeyRef.current = null;
+      refreshDepsRef.current = {
+        groupId,
+        year: currentYear,
+        month: currentMonth,
+        showProcessed: showProcessedHistory,
+      };
+      setIsUpdating(false);
+      return;
+    }
+
+    const prev = refreshDepsRef.current;
+    const groupChanged = prev.groupId !== groupId;
+    const monthChanged = prev.year !== currentYear || prev.month !== currentMonth;
+    const histToggle = prev.showProcessed !== showProcessedHistory;
+    refreshDepsRef.current = {
+      groupId,
+      year: currentYear,
+      month: currentMonth,
+      showProcessed: showProcessedHistory,
+    };
+
+    if (groupChanged) {
+      void refreshData(currentYear, currentMonth, { config: false });
+    } else if (histToggle && !monthChanged) {
+      void refreshData(currentYear, currentMonth, {
+        users: false,
+        schedules: false,
+        config: false,
+        counts: false,
+        histories: true,
+      });
+    } else if (monthChanged && !histToggle) {
+      void refreshData(currentYear, currentMonth, {
+        users: false,
+        histories: false,
+        config: false,
+        counts: false,
+        schedules: true,
+      });
+    } else {
+      void refreshData(currentYear, currentMonth);
+    }
   }, [groupId, showProcessedHistory, currentYear, currentMonth]);
 
   useEffect(() => {
+    if (skipCountsOnMountRef.current) {
+      skipCountsOnMountRef.current = false;
+      return;
+    }
     void refreshUnprocessedCounts();
   }, [groups]);
+
+  useEffect(() => {
+    if (softRefreshToken === softRefreshSeenRef.current) return;
+    softRefreshSeenRef.current = softRefreshToken;
+    if (softRefreshToken === 0) return;
+    void refreshData(currentYear, currentMonth, { config: false });
+  }, [softRefreshToken]);
 
   const handleAddUser = async () => {
     if (!newUserName.trim()) return;
@@ -220,7 +370,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       if (targetGroupId !== groupId) {
         onGroupChange(targetGroupId);
       } else {
-        refreshData();
+        void refreshData(currentYear, currentMonth, { config: false });
       }
       alert(`${groupLabel(groups, targetGroupId)}に「${name}」を追加しました。`);
     } catch (err: any) {
@@ -236,7 +386,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleDeleteUser = async (id: string) => {
     if (confirm('この利用者を削除してもよろしいですか？（出勤予定も削除されます）')) {
       await db.deleteUser(id);
-      refreshData();
+      void refreshData(currentYear, currentMonth, { config: false });
       alert('利用者を削除しました。');
     }
   };
@@ -264,7 +414,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     try {
       await db.saveUser({ id: user.id, name, employeeId, groupId: user.groupId });
       setEditUserId(null);
-      await refreshData();
+      await refreshData(currentYear, currentMonth, { config: false });
       alert('利用者情報を更新しました。');
     } catch (err: any) {
       console.error(err);
@@ -301,7 +451,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (!user || !moveTargetId) return;
     await db.moveUserToGroup(user.id, moveTargetId);
     setMoveUserId(null);
-    refreshData();
+    void refreshData(currentYear, currentMonth, { config: false });
     alert(`「${user.name}」を${groupLabel(groups, moveTargetId)}へ移しました（履歴も一緒に移動します）。`);
   };
 
@@ -338,17 +488,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const persistConfig = async (next: SystemConfig, successMessage?: string) => {
     setConfig(next);
     try {
-      await db.saveConfig({
+      const saved = await db.saveConfig({
         ...next,
         holidays: next.holidays || [],
       });
-      onConfigUpdate();
+      setConfig(saved);
+      await onConfigUpdate(saved);
       if (successMessage) showConfigSaved(successMessage);
-      await refreshData();
     } catch (err) {
       console.error(err);
       alert('保存に失敗しました。通信状況を確認してもう一度お試しください。');
-      await refreshData();
+      await refreshData(currentYear, currentMonth, {
+        users: false,
+        histories: false,
+        schedules: false,
+        counts: false,
+        config: true,
+      });
     }
   };
 
@@ -427,7 +583,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   if (loadError && !config) {
     return (
-      <Layout title="管理者パネル" onLogout={onLogout}>
+      <Layout title="管理者パネル" onLogout={onLogout} syncDocumentTitle={syncDocumentTitle}>
         <div className="max-w-md mx-auto mt-16 bg-white p-8 rounded-3xl border border-rose-100 text-center shadow-sm">
           <i className="fas fa-exclamation-triangle text-4xl text-rose-500 mb-4"></i>
           <p className="text-slate-700 font-bold mb-6">{loadError}</p>
@@ -452,6 +608,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       isAdmin
       navTarget="MAIN"
       onNavigate={onNavigateGeneral}
+      syncDocumentTitle={syncDocumentTitle}
     >
       {loadError && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900">
@@ -1042,8 +1199,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           )}
 
-          {activeTab === 'LINKS' && (
-            <AccessLinksPanel currentLinkId={currentLinkId} groups={groups} />
+          {(activeTab === 'LINKS' || linksEverOpened) && (
+            <div className={activeTab === 'LINKS' ? undefined : 'hidden'} aria-hidden={activeTab !== 'LINKS'}>
+              <AccessLinksPanel currentLinkId={currentLinkId} groups={groups} />
+            </div>
           )}
         </div>
       </div>
@@ -1059,7 +1218,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             setUsers((prev) =>
               prev.map((u) => (u.id === noteUser.id ? { ...u, note } : u))
             );
-            refreshData();
           }}
         />
       )}

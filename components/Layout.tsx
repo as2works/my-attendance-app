@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { setDocumentTitle } from '../services/documentTitle';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -8,6 +9,8 @@ interface LayoutProps {
   /** ヘッダー切替ボタンの行き先（管理者セッション時のみ表示） */
   navTarget?: 'MAIN' | 'ADMIN';
   onNavigate?: () => void;
+  /** hidden 保持中の画面では false（タブタイトルの上書き防止） */
+  syncDocumentTitle?: boolean;
 }
 
 const Layout: React.FC<LayoutProps> = ({
@@ -17,9 +20,15 @@ const Layout: React.FC<LayoutProps> = ({
   isAdmin,
   navTarget,
   onNavigate,
+  syncDocumentTitle = true,
 }) => {
   const showNav = !!(isAdmin && onNavigate && navTarget);
   const navLabel = navTarget === 'ADMIN' ? '管理者画面へ' : '一般画面へ';
+
+  useEffect(() => {
+    if (!syncDocumentTitle) return;
+    setDocumentTitle(title);
+  }, [title, syncDocumentTitle]);
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50">

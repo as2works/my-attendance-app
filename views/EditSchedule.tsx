@@ -1,9 +1,9 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Layout from '../components/Layout';
 import { hasUserNote } from '../components/UserNoteButton';
 import UserNoteModal from '../components/UserNoteModal';
-import { User, SystemConfig, AttendanceStatus, Group, groupLabel } from '../types';
+import { User, SystemConfig, AttendanceStatus, Group, groupLabel, Schedule } from '../types';
 import { getDayTone, dayToneTextClass, listDatesInSeason } from '../services/calendarTone';
 import { db } from '../services/database';
 import { getStatusOptions, STATUS_COLORS } from '../constants';
@@ -13,49 +13,101 @@ interface EditScheduleProps {
   user: User;
   config: SystemConfig;
   groups: Group[];
+  /** 一覧から渡す当月などのシード。あれば即表示し、裏でシーズン全体を取得 */
+  seedSchedules?: Schedule[];
   onBack: () => void;
   onLogout: () => void;
+  /** 保存成功時。一覧の差分更新用 */
+  onSaved?: (updates: Schedule[]) => void;
 }
 
-const EditSchedule: React.FC<EditScheduleProps> = ({ user, config, groups, onBack, onLogout }) => {
+function schedulesToMap(rows: Schedule[]): Record<string, AttendanceStatus> {
+  const map: Record<string, AttendanceStatus> = {};
+  for (const s of rows) {
+    map[s.date] = s.status as AttendanceStatus;
+  }
+  return map;
+}
+
+const EditSchedule: React.FC<EditScheduleProps> = ({
+  user,
+  config,
+  groups,
+  seedSchedules = [],
+  onBack,
+  onLogout,
+  onSaved,
+}) => {
   const currentGroup = groups.find((g) => g.id === user.groupId);
   const currentGroupName = groupLabel(groups, user.groupId);
-  const [localSchedules, setLocalSchedules] = useState<Record<string, AttendanceStatus>>({});
-  const [initialSchedules, setInitialSchedules] = useState<Record<string, AttendanceStatus>>({});
+  const initialSeedMap = useMemo(
+    () => schedulesToMap(seedSchedules.filter((s) => s.userId === user.id)),
+    // マウント時シードのみ。親の配列参照変更でリセットしない
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [user.id]
+  );
+  const hasSeed = Object.keys(initialSeedMap).length > 0;
+
+  const [localSchedules, setLocalSchedules] = useState<Record<string, AttendanceStatus>>(() => ({
+    ...initialSeedMap,
+  }));
+  const [initialSchedules, setInitialSchedules] = useState<Record<string, AttendanceStatus>>(() => ({
+    ...initialSeedMap,
+  }));
   const [isSaving, setIsSaving] = useState(false);
+  /** シーズン全体の読み込み中（シードがあれば編集は可能、保存は完了待ち） */
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const [note, setNote] = useState(user.note || '');
   const [noteOpen, setNoteOpen] = useState(false);
   /** 未入力（-）・△、および未登録の変更日だけ表示。デフォルトON */
   const [showNeedsInputOnly, setShowNeedsInputOnly] = useState(true);
   const statusOptions = useMemo(() => getStatusOptions(currentGroup), [currentGroup]);
+  const dirtyDatesRef = useRef<Set<string>>(new Set());
+  const seedRef = useRef(initialSeedMap);
+  seedRef.current = initialSeedMap;
 
   useEffect(() => {
     setNote(user.note || '');
   }, [user.id, user.note]);
 
   useEffect(() => {
+    dirtyDatesRef.current = new Set();
+    const seed = seedRef.current;
+    setLocalSchedules({ ...seed });
+    setInitialSchedules({ ...seed });
+    setLoadError(false);
+    setIsLoading(true);
+
     const fetchData = async () => {
-      setIsLoading(true);
       try {
-        const savedSchedules = await db.getSchedulesForUser(user.id, user.groupId);
-        const map: Record<string, AttendanceStatus> = {};
-        savedSchedules.forEach((s) => {
-          map[s.date] = s.status;
+        const savedSchedules = await db.getSchedulesForUser(user.id, user.groupId, {
+          dateFrom: config.seasonStartDate,
+          dateTo: config.seasonEndDate,
         });
-        setLocalSchedules(map);
-        setInitialSchedules({ ...map });
+        const fullMap = schedulesToMap(savedSchedules);
+        setInitialSchedules(fullMap);
+        setLocalSchedules((prev) => {
+          const next = { ...fullMap };
+          for (const date of dirtyDatesRef.current) {
+            if (prev[date] !== undefined) next[date] = prev[date];
+          }
+          return next;
+        });
       } catch (err) {
         console.error(err);
-        alert('予定の読み込みに失敗しました。戻ってもう一度開いてください。');
-        setLocalSchedules({});
-        setInitialSchedules({});
+        setLoadError(true);
+        if (Object.keys(seedRef.current).length === 0) {
+          setLocalSchedules({});
+          setInitialSchedules({});
+        }
       } finally {
         setIsLoading(false);
       }
     };
     void fetchData();
-  }, [user.id, user.groupId]);
+  }, [user.id, user.groupId, config.seasonStartDate, config.seasonEndDate]);
 
   const datesInRange = useMemo(
     () => listDatesInSeason(config.seasonStartDate, config.seasonEndDate),
@@ -74,12 +126,14 @@ const EditSchedule: React.FC<EditScheduleProps> = ({ user, config, groups, onBac
   }, [datesInRange, showNeedsInputOnly, localSchedules, initialSchedules]);
 
   const handleStatusChange = (date: string, newStatus: AttendanceStatus) => {
-    setLocalSchedules(prev => ({ ...prev, [date]: newStatus }));
+    dirtyDatesRef.current.add(date);
+    setLocalSchedules((prev) => ({ ...prev, [date]: newStatus }));
   };
 
   const handleSave = async () => {
     if (isSaving || isLoading) return;
     setIsSaving(true);
+    setSaveNotice(null);
     try {
       const changes: { date: string; oldStatus: string; newStatus: string }[] = [];
       datesInRange.forEach((date) => {
@@ -96,21 +150,21 @@ const EditSchedule: React.FC<EditScheduleProps> = ({ user, config, groups, onBac
           date: c.date,
           status: c.newStatus as AttendanceStatus,
         }));
-        await db.updateSchedules(changedUpdates, user.groupId);
         const message = buildHistoryMessage(user.name, changes);
-        await db.addHistory({
+        await db.saveUserSchedules({
           userId: user.id,
           userName: user.name,
-          message,
-          isProcessed: false,
           groupId: user.groupId,
+          updates: changes.map((c) => ({ date: c.date, status: c.newStatus })),
+          message,
         });
-        alert('予定を保存しました。');
+        onSaved?.(changedUpdates);
+        setSaveNotice('予定を保存しました');
       }
       onBack();
     } catch (e) {
       console.error(e);
-      alert('保存中にエラーが発生しました。');
+      setSaveNotice('保存中にエラーが発生しました');
     } finally {
       setIsSaving(false);
     }
@@ -152,6 +206,9 @@ const EditSchedule: React.FC<EditScheduleProps> = ({ user, config, groups, onBac
     ? 'grid grid-cols-4 sm:grid-cols-8 gap-1 sm:gap-2'
     : 'grid grid-cols-3 sm:grid-cols-6 gap-1 sm:gap-2';
 
+  const canEdit = !loadError || hasSeed;
+  const blockSave = !hasChanges || isSaving || isLoading || loadError;
+
   return (
     <Layout
       title={`${config.showEmployeeId !== false && user.employeeId ? `${user.employeeId} ` : ''}${user.name} さんの予定編集（${currentGroupName}）`}
@@ -173,9 +230,9 @@ const EditSchedule: React.FC<EditScheduleProps> = ({ user, config, groups, onBac
               </button>
               <button
                 onClick={handleSave}
-                disabled={!hasChanges || isSaving || isLoading}
+                disabled={blockSave}
                 className={`flex-1 sm:flex-none px-3 sm:px-6 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-black transition flex items-center justify-center space-x-1.5 sm:space-x-2 text-sm sm:text-base ${
-                  hasChanges && !isLoading
+                  !blockSave
                     ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-100'
                     : 'bg-slate-100 text-slate-300 cursor-not-allowed'
                 }`}
@@ -186,24 +243,34 @@ const EditSchedule: React.FC<EditScheduleProps> = ({ user, config, groups, onBac
             </div>
           </div>
 
-          {(isLoading || hasChanges) && (
-            <div className="px-3 sm:px-6 pb-2 sm:pb-3">
-              {isLoading ? (
+          {(isLoading || hasChanges || loadError || saveNotice) && (
+            <div className="px-3 sm:px-6 pb-2 sm:pb-3 space-y-2">
+              {loadError && !hasSeed && (
+                <div className="w-full bg-rose-50 border border-rose-200 text-rose-800 px-2.5 py-1.5 sm:p-3 rounded-lg sm:rounded-xl text-[11px] sm:text-sm font-bold">
+                  予定の読み込みに失敗しました。戻ってもう一度開いてください。
+                </div>
+              )}
+              {isLoading && (
                 <div className="w-full text-slate-400 text-xs sm:text-sm flex items-center space-x-2 px-1 italic">
                   <i className="fas fa-circle-notch fa-spin"></i>
-                  <span>読み込み中...</span>
+                  <span>{hasSeed ? 'シーズン全体を読み込み中...' : '読み込み中...'}</span>
                 </div>
-              ) : (
+              )}
+              {!isLoading && hasChanges && (
                 <div className="w-full bg-amber-50 border border-amber-200 text-amber-800 px-2.5 py-1.5 sm:p-3 rounded-lg sm:rounded-xl flex items-center space-x-2 animate-in fade-in slide-in-from-top-2 duration-300">
                   <i className="fas fa-exclamation-circle text-sm sm:text-lg shrink-0"></i>
                   <span className="font-bold text-[11px] sm:text-sm leading-snug">未保存です。「登録する」を押してください。</span>
+                </div>
+              )}
+              {saveNotice && (
+                <div className="w-full bg-emerald-50 border border-emerald-200 text-emerald-800 px-2.5 py-1.5 rounded-lg text-[11px] sm:text-sm font-bold">
+                  {saveNotice}
                 </div>
               )}
             </div>
           )}
         </div>
 
-        {/* 固定ヘッダーの外に置く → スクロールで消え、記号操作を邪魔しにくい */}
         <button
           type="button"
           onClick={() => setNoteOpen(true)}
@@ -249,12 +316,13 @@ const EditSchedule: React.FC<EditScheduleProps> = ({ user, config, groups, onBac
         </div>
 
         <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-slate-200 divide-y divide-slate-100 overflow-hidden min-h-[200px] relative">
-          {isLoading && (
+          {isLoading && !hasSeed && (
             <div className="absolute inset-0 bg-white/60 flex items-center justify-center z-10">
               <i className="fas fa-spinner fa-spin text-indigo-600 text-2xl"></i>
             </div>
           )}
-          {visibleDates.map(dateStr => {
+          {canEdit &&
+            visibleDates.map((dateStr) => {
             const { label } = formatDateLabel(dateStr);
             const status = localSchedules[dateStr] || '-';
             const isChanged = (initialSchedules[dateStr] || '-') !== status;
@@ -271,7 +339,7 @@ const EditSchedule: React.FC<EditScheduleProps> = ({ user, config, groups, onBac
                   </div>
 
                   <div className={gridClass}>
-                    {statusOptions.map(opt => (
+                    {statusOptions.map((opt) => (
                       <button
                         key={opt}
                         onClick={() => handleStatusChange(dateStr, opt)}

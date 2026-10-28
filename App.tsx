@@ -1,12 +1,32 @@
 import React, { useState, useEffect } from 'react';
-import { ViewState, User, SystemConfig, GroupId, Group, AccessSession, DEFAULT_GROUP_IDS } from './types';
+import {
+  ViewState,
+  User,
+  SystemConfig,
+  GroupId,
+  Group,
+  AccessSession,
+  DEFAULT_GROUP_IDS,
+  Schedule,
+  History,
+} from './types';
 import MainList from './views/MainList';
 import EditSchedule from './views/EditSchedule';
 import AdminDashboard from './views/AdminDashboard';
 import WorkspacePortal from './views/WorkspacePortal';
 import AccessGate from './views/AccessGate';
-import { db, setAccessToken } from './services/database';
+import { db, setAccessToken, type BootstrapAdminResult } from './services/database';
 import { getAccessTokenFromPath, buildAccessUrl } from './services/accessPath';
+
+type AdminInitialData = {
+  users: User[];
+  histories: History[];
+  schedules: Schedule[];
+  config: SystemConfig;
+  year: number;
+  month: number;
+  unprocessedCounts: Record<string, number>;
+};
 
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState>('MAIN');
@@ -18,6 +38,16 @@ const App: React.FC = () => {
   const [selectedGroupId, setSelectedGroupId] = useState<GroupId>(DEFAULT_GROUP_IDS.DORM);
   const [bootError, setBootError] = useState<string | null>(null);
   const [isBooting, setIsBooting] = useState(true);
+  const [mainInitialData, setMainInitialData] = useState<{
+    users: User[];
+    schedules: Schedule[];
+    year: number;
+    month: number;
+  } | null>(null);
+  const [editSeedSchedules, setEditSeedSchedules] = useState<Schedule[]>([]);
+  const [schedulePatch, setSchedulePatch] = useState<Schedule[] | null>(null);
+  const [adminInitialData, setAdminInitialData] = useState<AdminInitialData | null>(null);
+  const [adminSoftRefreshToken, setAdminSoftRefreshToken] = useState(0);
   const [devBootstrapLinks, setDevBootstrapLinks] = useState<{
     ownerUrl?: string;
     adminUrl?: string;
@@ -32,13 +62,34 @@ const App: React.FC = () => {
     return next;
   };
 
+  const applyAdminBoot = (boot: BootstrapAdminResult) => {
+    const nextSession: AccessSession = {
+      linkId: boot.link.id,
+      role: boot.link.role,
+      workspaceId: boot.link.workspaceId,
+    };
+    setSession(nextSession);
+    setGroups(boot.groups);
+    setConfig(boot.config);
+    setWorkspaceName(boot.workspace.name);
+    setSelectedGroupId(boot.groupId);
+    setAdminInitialData({
+      users: boot.users,
+      histories: boot.histories,
+      schedules: boot.schedules,
+      config: boot.config,
+      year: boot.year,
+      month: boot.month,
+      unprocessedCounts: boot.unprocessedCounts || {},
+    });
+    setView('ADMIN');
+  };
+
   useEffect(() => {
     const init = async () => {
       try {
-        const seed = await db.ensureSeed(
-          import.meta.env.DEV ? { discloseBootstrapLinks: true } : undefined
-        );
         if (import.meta.env.DEV) {
+          const seed = await db.ensureSeed({ discloseBootstrapLinks: true });
           const ownerUrl = seed.ownerLinkId ? buildAccessUrl(seed.ownerLinkId) : undefined;
           const adminUrl = seed.defaultAdminLinkId
             ? buildAccessUrl(seed.defaultAdminLinkId)
@@ -57,6 +108,84 @@ const App: React.FC = () => {
         }
 
         setAccessToken(token);
+
+        // GENERAL: 1往復
+        try {
+          const boot = await db.bootstrapGeneral();
+          const nextSession: AccessSession = {
+            linkId: boot.link.id,
+            role: boot.link.role,
+            workspaceId: boot.link.workspaceId,
+            groupId: boot.link.groupId,
+          };
+          setSession(nextSession);
+          setGroups(boot.groups);
+          setConfig(boot.config);
+          setSelectedGroupId(boot.link.groupId || boot.groups[0]?.id || DEFAULT_GROUP_IDS.DORM);
+          setMainInitialData({
+            users: boot.users,
+            schedules: boot.schedules,
+            year: boot.year,
+            month: boot.month,
+          });
+          setView('MAIN');
+          return;
+        } catch (generalErr: any) {
+          const code = String(generalErr?.message || '');
+          if (code.includes('UNAUTHORIZED')) {
+            setAccessToken(null);
+            setSession(null);
+            setView('NOT_FOUND');
+            return;
+          }
+          if (code.includes('NOT_FOUND')) {
+            setBootError(
+              '表示に必要な設定が見つかりません。管理者に連絡するか、配布URLを確認してください。'
+            );
+            return;
+          }
+          if (!code.includes('FORBIDDEN')) {
+            throw generalErr;
+          }
+        }
+
+        // ADMIN: GENERAL が FORBIDDEN のあと 1往復
+        try {
+          const boot = await db.bootstrapAdmin();
+          applyAdminBoot(boot);
+          if (import.meta.env.DEV) {
+            const links = await db.listAccessLinks();
+            console.info(
+              '[入場URL（開発用）]',
+              links.map((item) => ({
+                role: item.role,
+                workspaceId: item.workspaceId ?? '(n/a)',
+                groupId: item.groupId ?? '(admin)',
+                url: buildAccessUrl(item.id),
+              }))
+            );
+          }
+          return;
+        } catch (adminErr: any) {
+          const code = String(adminErr?.message || '');
+          if (code.includes('UNAUTHORIZED')) {
+            setAccessToken(null);
+            setSession(null);
+            setView('NOT_FOUND');
+            return;
+          }
+          if (code.includes('NOT_FOUND')) {
+            setBootError(
+              '表示に必要な設定が見つかりません。管理者に連絡するか、配布URLを確認してください。'
+            );
+            return;
+          }
+          if (!code.includes('FORBIDDEN')) {
+            throw adminErr;
+          }
+        }
+
+        // OWNER（またはフォールバック）
         const link = await db.resolveAccessLink(token);
         if (!link) {
           setAccessToken(null);
@@ -81,17 +210,16 @@ const App: React.FC = () => {
           return;
         }
 
+        // 想定外ロールのフォールバック（通常到達しない）
         const loadedGroups = await db.listGroups();
         setGroups(loadedGroups);
         const fallbackGroupId = loadedGroups[0]?.id || DEFAULT_GROUP_IDS.DORM;
-
         try {
           const meta = await db.getWorkspaceMeta();
           setWorkspaceName(meta.name);
         } catch {
           setWorkspaceName('');
         }
-
         if (link.role === 'ADMIN') {
           setSelectedGroupId(fallbackGroupId);
           setView('ADMIN');
@@ -99,25 +227,12 @@ const App: React.FC = () => {
           setSelectedGroupId(link.groupId || fallbackGroupId);
           setView('MAIN');
         }
-
-        const initialConfig = await db.getConfig();
-        setConfig(initialConfig);
-
-        if (import.meta.env.DEV && link.role === 'ADMIN') {
-          const links = await db.listAccessLinks();
-          console.info(
-            '[入場URL（開発用）]',
-            links.map((item) => ({
-              role: item.role,
-              workspaceId: item.workspaceId ?? '(n/a)',
-              groupId: item.groupId ?? '(admin)',
-              url: buildAccessUrl(item.id),
-            }))
-          );
-        }
+        setConfig(await db.getConfig());
       } catch (err: any) {
         console.error('Backend initialization failed:', err);
-        setBootError('バックエンドとの接続に失敗しました。Amplify sandbox のデプロイが完了しているか確認してください。');
+        setBootError(
+          'バックエンドとの接続に失敗しました。Amplify sandbox のデプロイが完了しているか確認してください。'
+        );
       } finally {
         setIsBooting(false);
       }
@@ -129,20 +244,38 @@ const App: React.FC = () => {
     setAccessToken(null);
     setCurrentUser(null);
     setSession(null);
+    setMainInitialData(null);
+    setEditSeedSchedules([]);
+    setSchedulePatch(null);
+    setAdminInitialData(null);
     setSelectedGroupId(groups[0]?.id || DEFAULT_GROUP_IDS.DORM);
     setView('LOGGED_OUT');
     window.history.replaceState(null, '', '/');
   };
 
-  const handleEditUser = (user: User) => {
+  const handleEditUser = (user: User, seedSchedules: Schedule[] = []) => {
     setCurrentUser(user);
+    setEditSeedSchedules(seedSchedules);
     setView('EDIT');
   };
 
-  const handleConfigUpdate = async () => {
+  const handleEditSaved = (updates: Schedule[]) => {
+    setSchedulePatch(updates);
+  };
+
+  const handleEditBack = () => {
+    setCurrentUser(null);
+    setEditSeedSchedules([]);
+    setView('MAIN');
+  };
+
+  const handleConfigUpdate = async (next?: SystemConfig) => {
+    if (next) {
+      setConfig(next);
+      return;
+    }
     try {
-      const updatedConfig = await db.getConfig();
-      setConfig(updatedConfig);
+      setConfig(await db.getConfig());
     } catch (err) {
       console.error('Failed to refresh config:', err);
     }
@@ -162,6 +295,16 @@ const App: React.FC = () => {
   const handleGroupChange = (groupId: GroupId) => {
     if (!isAdminUser) return;
     setSelectedGroupId(groupId);
+  };
+
+  const handleNavigateGeneral = () => {
+    setMainInitialData(null);
+    setView('MAIN');
+  };
+
+  const handleNavigateAdmin = () => {
+    setAdminSoftRefreshToken((n) => n + 1);
+    setView('ADMIN');
   };
 
   if (bootError) {
@@ -220,43 +363,61 @@ const App: React.FC = () => {
     );
   }
 
+  const showMainShell = view === 'MAIN' || view === 'EDIT';
+  const showAdminShell =
+    isAdminUser && (view === 'ADMIN' || view === 'MAIN' || view === 'EDIT');
+
   return (
     <div className="min-h-screen">
-      {view === 'MAIN' && (
-        <MainList
-          onLogout={handleLogout}
-          onEditUser={handleEditUser}
-          config={config}
-          groups={groups}
-          onNavigateAdmin={() => setView('ADMIN')}
-          isAdmin={isAdminUser}
-          groupId={selectedGroupId}
-          onGroupChange={handleGroupChange}
-        />
+      {showMainShell && (
+        <div className={view === 'MAIN' ? undefined : 'hidden'} aria-hidden={view !== 'MAIN'}>
+          <MainList
+            onLogout={handleLogout}
+            onEditUser={handleEditUser}
+            config={config}
+            groups={groups}
+            onNavigateAdmin={handleNavigateAdmin}
+            isAdmin={isAdminUser}
+            groupId={selectedGroupId}
+            onGroupChange={handleGroupChange}
+            initialData={mainInitialData}
+            schedulePatch={schedulePatch}
+            onSchedulePatchApplied={() => setSchedulePatch(null)}
+            syncDocumentTitle={view === 'MAIN'}
+          />
+        </div>
       )}
 
       {view === 'EDIT' && currentUser && (
         <EditSchedule
+          key={currentUser.id}
           user={currentUser}
           config={config}
           groups={groups}
-          onBack={() => setView('MAIN')}
+          seedSchedules={editSeedSchedules}
+          onBack={handleEditBack}
           onLogout={handleLogout}
+          onSaved={handleEditSaved}
         />
       )}
 
-      {view === 'ADMIN' && isAdminUser && (
-        <AdminDashboard
-          onLogout={handleLogout}
-          onConfigUpdate={handleConfigUpdate}
-          onNavigateGeneral={() => setView('MAIN')}
-          groups={groups}
-          onGroupsChange={handleGroupsChange}
-          groupId={selectedGroupId}
-          onGroupChange={handleGroupChange}
-          currentLinkId={session.linkId}
-          workspaceName={workspaceName}
-        />
+      {showAdminShell && (
+        <div className={view === 'ADMIN' ? undefined : 'hidden'} aria-hidden={view !== 'ADMIN'}>
+          <AdminDashboard
+            onLogout={handleLogout}
+            onConfigUpdate={handleConfigUpdate}
+            onNavigateGeneral={handleNavigateGeneral}
+            groups={groups}
+            onGroupsChange={handleGroupsChange}
+            groupId={selectedGroupId}
+            onGroupChange={handleGroupChange}
+            currentLinkId={session.linkId}
+            workspaceName={workspaceName}
+            initialData={adminInitialData}
+            softRefreshToken={adminSoftRefreshToken}
+            syncDocumentTitle={view === 'ADMIN'}
+          />
+        </div>
       )}
     </div>
   );

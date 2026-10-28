@@ -19,13 +19,24 @@ import {
 
 interface MainListProps {
   onLogout: () => void;
-  onEditUser: (user: User) => void;
+  onEditUser: (user: User, seedSchedules: Schedule[]) => void;
   config: SystemConfig;
   groups: Group[];
   onNavigateAdmin: () => void;
   isAdmin: boolean;
   groupId: GroupId;
   onGroupChange: (groupId: GroupId) => void;
+  /** bootstrapGeneral からの初回データ。一致する group/年月なら初回 fetch をスキップ */
+  initialData?: {
+    users: User[];
+    schedules: Schedule[];
+    year: number;
+    month: number;
+  } | null;
+  /** 編集画面から戻ったときの予定差分 */
+  schedulePatch?: Schedule[] | null;
+  onSchedulePatchApplied?: () => void;
+  syncDocumentTitle?: boolean;
 }
 
 const MainList: React.FC<MainListProps> = ({
@@ -37,21 +48,47 @@ const MainList: React.FC<MainListProps> = ({
   isAdmin,
   groupId,
   onGroupChange,
+  initialData = null,
+  schedulePatch = null,
+  onSchedulePatchApplied,
+  syncDocumentTitle = true,
 }) => {
   const currentGroup = groups.find((g) => g.id === groupId);
   const currentGroupName = groupLabel(groups, groupId);
-  const [users, setUsers] = useState<User[]>([]);
-  const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const fallbackPeriod = getSeasonDisplayPeriod(config.seasonStartDate, config.seasonEndDate);
+  const hasBootData =
+    !!initialData &&
+    initialData.year != null &&
+    initialData.month != null;
+
+  const [users, setUsers] = useState<User[]>(() => (hasBootData ? initialData!.users : []));
+  const [schedules, setSchedules] = useState<Schedule[]>(() =>
+    hasBootData ? initialData!.schedules : []
+  );
+  const [isLoading, setIsLoading] = useState(!hasBootData);
   const [noteUser, setNoteUser] = useState<User | null>(null);
   const [nameQuery, setNameQuery] = useState('');
 
-  const initialPeriod = getSeasonDisplayPeriod(config.seasonStartDate, config.seasonEndDate);
-  const [currentMonth, setCurrentMonth] = useState(initialPeriod.month);
-  const [currentYear, setCurrentYear] = useState(initialPeriod.year);
+  const [currentMonth, setCurrentMonth] = useState(
+    hasBootData ? initialData!.month : fallbackPeriod.month
+  );
+  const [currentYear, setCurrentYear] = useState(
+    hasBootData ? initialData!.year : fallbackPeriod.year
+  );
   const fetchSeqRef = useRef(0);
+  /** 消費済みの initialData キー（groupId|year|month）。一度だけスキップ */
+  const consumedInitialKeyRef = useRef<string | null>(
+    hasBootData ? `${groupId}|${initialData!.year}|${initialData!.month}` : null
+  );
 
   useEffect(() => {
+    const key = `${groupId}|${currentYear}|${currentMonth}`;
+    if (consumedInitialKeyRef.current === key) {
+      consumedInitialKeyRef.current = null;
+      setIsLoading(false);
+      return;
+    }
+
     const seq = ++fetchSeqRef.current;
     const fetchData = async () => {
       setIsLoading(true);
@@ -82,6 +119,28 @@ const MainList: React.FC<MainListProps> = ({
     setNameQuery('');
     setNoteUser(null);
   }, [groupId]);
+
+  useEffect(() => {
+    if (!schedulePatch || schedulePatch.length === 0) return;
+    setSchedules((prev) => {
+      const map = new Map<string, Schedule>();
+      for (const s of prev) {
+        map.set(`${s.userId}|${s.date}`, s);
+      }
+      for (const row of schedulePatch) {
+        const key = `${row.userId}|${row.date}`;
+        if (row.status === '-') {
+          map.delete(key);
+        } else {
+          map.set(key, row);
+        }
+      }
+      return Array.from(map.values());
+    });
+    onSchedulePatchApplied?.();
+    // onSchedulePatchApplied は親のインライン関数になりがちなので deps に含めない
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedulePatch]);
 
   const showEmployeeId = config.showEmployeeId !== false;
   const normalizedQuery = nameQuery.trim().toLocaleLowerCase('ja');
@@ -141,6 +200,7 @@ const MainList: React.FC<MainListProps> = ({
       isAdmin={isAdmin}
       navTarget="ADMIN"
       onNavigate={onNavigateAdmin}
+      syncDocumentTitle={syncDocumentTitle}
     >
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="p-4 sm:p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-slate-50/50">
@@ -252,7 +312,12 @@ const MainList: React.FC<MainListProps> = ({
                       </span>
                       <div className="flex items-center gap-1">
                         <button
-                          onClick={() => onEditUser(user)}
+                          onClick={() =>
+                            onEditUser(
+                              user,
+                              schedules.filter((s) => s.userId === user.id)
+                            )
+                          }
                           className="flex-1 px-1 py-1 text-[10px] sm:text-xs font-bold bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition shadow-sm shadow-indigo-100"
                         >
                           編集

@@ -184,6 +184,61 @@ function monthBounds(year: number, month: number) {
   return { start, end };
 }
 
+/** クライアント services/calendarTone.toDateKey と同期 */
+function toDateKey(year: number, monthIndex: number, day: number): string {
+  return `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/**
+ * クライアント services/calendarTone.getSeasonDisplayPeriod と同期。
+ * シーズン内 → 当月 / 期間前 → 開始月 / 期間後 → 終了月
+ */
+function getSeasonDisplayPeriod(
+  seasonStart: string,
+  seasonEnd: string,
+  today = new Date()
+): { year: number; month: number } {
+  const todayKey = toDateKey(today.getFullYear(), today.getMonth(), today.getDate());
+  if (todayKey < seasonStart) {
+    const start = new Date(`${seasonStart}T00:00:00`);
+    return { year: start.getFullYear(), month: start.getMonth() };
+  }
+  if (todayKey > seasonEnd) {
+    const end = new Date(`${seasonEnd}T00:00:00`);
+    return { year: end.getFullYear(), month: end.getMonth() };
+  }
+  return { year: today.getFullYear(), month: today.getMonth() };
+}
+
+async function listSchedulesForUserIdsInMonth(
+  userIds: string[],
+  year: number,
+  month: number
+): Promise<Array<{ userId: string; date: string; status: string }>> {
+  if (!userIds.length) return [];
+  const { start, end } = monthBounds(year, month);
+  const pages = await Promise.all(
+    userIds.map(async (userId) => {
+      const { data } = await client.models.Schedule.list({
+        filter: {
+          and: [
+            { userId: { eq: userId } },
+            { date: { ge: start } },
+            { date: { le: end } },
+          ],
+        },
+        limit: 40,
+      });
+      return data;
+    })
+  );
+  return pages.flat().map((s) => ({
+    userId: s.userId,
+    date: s.date,
+    status: s.status,
+  }));
+}
+
 async function resolveSession(token?: string | null): Promise<Session> {
   if (!token) fail('UNAUTHORIZED', 'token required');
   const { data } = await client.models.AccessLink.get({ id: token });
@@ -824,9 +879,126 @@ export const handler = async (event: { arguments: Args }) => {
         return ok({ reissuePassword });
       }
 
+      case 'bootstrapGeneral': {
+        if (session.role !== 'GENERAL') fail('FORBIDDEN', 'general only');
+        const workspaceId = requireWorkspaceSession(session);
+        const groupId = session.groupId;
+        if (!groupId) fail('UNAUTHORIZED', 'invalid general token');
+
+        const [configRow, groups, users] = await Promise.all([
+          client.models.Config.get({ id: workspaceId }).then((r) => r.data as any),
+          listGroupsInWorkspace(workspaceId),
+          getUsers(session, { groupId }),
+        ]);
+        if (!configRow) fail('NOT_FOUND', 'config');
+        const config = mapConfig(configRow, workspaceId);
+        const { year, month } = getSeasonDisplayPeriod(
+          config.seasonStartDate,
+          config.seasonEndDate
+        );
+        const schedules = await listSchedulesForUserIdsInMonth(
+          users.map((u) => u.id),
+          year,
+          month
+        );
+        return ok({
+          link: {
+            id: session.linkId,
+            role: session.role,
+            workspaceId,
+            groupId,
+          },
+          config,
+          groups,
+          users,
+          schedules,
+          year,
+          month,
+        });
+      }
+      case 'bootstrapAdmin': {
+        if (session.role !== 'ADMIN') fail('FORBIDDEN', 'admin only');
+        const workspaceId = requireWorkspaceSession(session);
+
+        const [configRow, groups, workspaceRow] = await Promise.all([
+          client.models.Config.get({ id: workspaceId }).then((r) => r.data as any),
+          listGroupsInWorkspace(workspaceId),
+          client.models.Workspace.get({ id: workspaceId }).then((r) => r.data),
+        ]);
+        if (!configRow) fail('NOT_FOUND', 'config');
+        if (!groups.length) fail('NOT_FOUND', 'no groups');
+        const config = mapConfig(configRow, workspaceId);
+        const groupId = groups[0].id;
+        const { year, month } = getSeasonDisplayPeriod(
+          config.seasonStartDate,
+          config.seasonEndDate
+        );
+
+        const users = await getUsers(session, { groupId });
+        const [historiesPage, schedules, unprocessedEntries] = await Promise.all([
+          client.models.History.listHistoriesByGroup(
+            { groupId },
+            { sortDirection: 'DESC', limit: 80 }
+          ),
+          listSchedulesForUserIdsInMonth(
+            users.map((u) => u.id),
+            year,
+            month
+          ),
+          Promise.all(
+            groups.map(async (g) => {
+              const { data } = await client.models.History.listHistoriesByGroup(
+                { groupId: g.id },
+                { sortDirection: 'DESC', limit: 200 }
+              );
+              return [g.id, data.filter((h) => !h.isProcessed).length] as const;
+            })
+          ),
+        ]);
+
+        const histories = historiesPage.data
+          .map((h) => ({
+            id: h.id,
+            userId: h.userId,
+            userName: h.userName,
+            message: h.message,
+            isProcessed: h.isProcessed,
+            createdAt: h.createdAt,
+            groupId: h.groupId || groupId,
+            recordedAt: h.recordedAt ?? h.createdAt,
+          }))
+          .filter((h) => !h.isProcessed);
+
+        const unprocessedCounts: Record<string, number> = {};
+        for (const [id, count] of unprocessedEntries) {
+          unprocessedCounts[id] = count;
+        }
+
+        const ws = workspaceRow ? mapWorkspace(workspaceRow) : null;
+        return ok({
+          link: {
+            id: session.linkId,
+            role: session.role,
+            workspaceId,
+          },
+          config,
+          groups,
+          workspace: {
+            id: workspaceId,
+            name: ws?.name || workspaceId,
+            note: ws?.note || '',
+          },
+          groupId,
+          users,
+          histories,
+          schedules,
+          year,
+          month,
+          unprocessedCounts,
+        });
+      }
       case 'getConfig': {
         const workspaceId = requireWorkspaceSession(session);
-        await ensureSeed();
         const config = (await client.models.Config.get({ id: workspaceId })).data as any;
         if (!config) fail('NOT_FOUND', 'config');
         return ok(mapConfig(config, workspaceId));
@@ -848,11 +1020,10 @@ export const handler = async (event: { arguments: Args }) => {
         if (errors?.length || !updated) {
           fail('SAVE_FAILED', errors?.[0]?.message || 'config update failed');
         }
-        return ok(true);
+        return ok(mapConfig(updated, workspaceId));
       }
       case 'listGroups': {
         const workspaceId = requireWorkspaceSession(session);
-        await ensureSeed();
         return ok(await listGroupsInWorkspace(workspaceId));
       }
       case 'createGroup': {
@@ -1105,40 +1276,49 @@ export const handler = async (event: { arguments: Args }) => {
       }
       case 'getSchedulesForMonth': {
         const groupId = await effectiveGroupId(session, payload.groupId);
-        const userIds = (payload.userIds as string[]) || [];
-        for (const userId of userIds) {
-          await assertUserInGroup(userId, groupId);
+        const requested = Array.isArray(payload.userIds)
+          ? [...new Set((payload.userIds as string[]).filter((id) => typeof id === 'string' && id))]
+          : [];
+        let userIds: string[];
+        if (requested.length) {
+          // クライアントが渡した ID を信頼せず所属確認のみ（全件 getUsers はしない）
+          await Promise.all(requested.map((id) => assertUserInGroup(id, groupId)));
+          userIds = requested;
+        } else {
+          userIds = (await getUsers(session, { groupId })).map((u) => u.id);
         }
-        const { start, end } = monthBounds(payload.year, payload.month);
-        const pages = await Promise.all(
-          userIds.map(async (userId) => {
-            const { data } = await client.models.Schedule.list({
-              filter: {
-                and: [
-                  { userId: { eq: userId } },
-                  { date: { ge: start } },
-                  { date: { le: end } },
-                ],
-              },
-              limit: 40,
-            });
-            return data;
-          })
-        );
         return ok(
-          pages.flat().map((s) => ({
-            userId: s.userId,
-            date: s.date,
-            status: s.status,
-          }))
+          await listSchedulesForUserIdsInMonth(
+            userIds,
+            Number(payload.year),
+            Number(payload.month)
+          )
         );
       }
       case 'getSchedulesForUser': {
         const groupId = await effectiveGroupId(session, payload.groupId);
         await assertUserInGroup(payload.userId, groupId);
+        const dateFrom =
+          typeof payload.dateFrom === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(payload.dateFrom)
+            ? payload.dateFrom
+            : null;
+        const dateTo =
+          typeof payload.dateTo === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(payload.dateTo)
+            ? payload.dateTo
+            : null;
+        const filter =
+          dateFrom && dateTo
+            ? {
+                and: [
+                  { userId: { eq: payload.userId } },
+                  { date: { ge: dateFrom } },
+                  { date: { le: dateTo } },
+                ],
+              }
+            : { userId: { eq: payload.userId } };
         const data = await listAllByFilter((nextToken) =>
           client.models.Schedule.list({
-            filter: { userId: { eq: payload.userId } },
+            filter,
             limit: 200,
             ...(nextToken ? { nextToken } : {}),
           }).then((r) => ({ data: r.data, nextToken: r.nextToken }))
@@ -1157,28 +1337,91 @@ export const handler = async (event: { arguments: Args }) => {
         const group = await assertGroupInWorkspace(groupId, workspaceId);
         const updates =
           (payload.updates as Array<{ userId: string; date: string; status: string }>) || [];
+        const userIds = [...new Set(updates.map((u) => u.userId))];
+        for (const userId of userIds) {
+          await assertUserInGroup(userId, groupId);
+        }
         for (const update of updates) {
-          await assertUserInGroup(update.userId, groupId);
           if (!isStatusAllowed(group, update.status)) {
             fail('INVALID_STATUS', update.status);
           }
-          const existing = await client.models.Schedule.get({
-            userId: update.userId,
-            date: update.date,
-          });
-          if (existing.data) {
-            await client.models.Schedule.update({
+        }
+        await Promise.all(
+          updates.map(async (update) => {
+            const existing = await client.models.Schedule.get({
               userId: update.userId,
               date: update.date,
-              status: update.status,
             });
-          } else {
-            await client.models.Schedule.create({
-              userId: update.userId,
-              date: update.date,
-              status: update.status,
-            });
+            if (existing.data) {
+              await client.models.Schedule.update({
+                userId: update.userId,
+                date: update.date,
+                status: update.status,
+              });
+            } else {
+              await client.models.Schedule.create({
+                userId: update.userId,
+                date: update.date,
+                status: update.status,
+              });
+            }
+          })
+        );
+        return ok(true);
+      }
+      case 'saveUserSchedules': {
+        const workspaceId = requireWorkspaceSession(session);
+        const groupId = await effectiveGroupId(session, payload.groupId);
+        const group = await assertGroupInWorkspace(groupId, workspaceId);
+        const userId = requireId(payload.userId, 'userId');
+        await assertUserInGroup(userId, groupId);
+        const updates =
+          (payload.updates as Array<{ date: string; status: string }>) || [];
+        for (const update of updates) {
+          if (!isStatusAllowed(group, update.status)) {
+            fail('INVALID_STATUS', update.status);
           }
+        }
+        await Promise.all(
+          updates.map(async (update) => {
+            const existing = await client.models.Schedule.get({
+              userId,
+              date: update.date,
+            });
+            if (existing.data) {
+              await client.models.Schedule.update({
+                userId,
+                date: update.date,
+                status: update.status,
+              });
+            } else {
+              await client.models.Schedule.create({
+                userId,
+                date: update.date,
+                status: update.status,
+              });
+            }
+          })
+        );
+        const message =
+          typeof payload.message === 'string' && payload.message.trim()
+            ? payload.message.trim().slice(0, 2000)
+            : '';
+        if (message) {
+          const userName =
+            typeof payload.userName === 'string' && payload.userName.trim()
+              ? payload.userName.trim().slice(0, 100)
+              : '利用者';
+          const recordedAt = new Date().toISOString();
+          await client.models.History.create({
+            userId,
+            userName,
+            message,
+            isProcessed: false,
+            groupId,
+            workspaceId,
+            recordedAt,
+          });
         }
         return ok(true);
       }

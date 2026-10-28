@@ -96,13 +96,33 @@ export async function exportAllAttendanceCsv(params: {
   const allSchedules: Schedule[] = [];
   const months = listYearMonthsInSeason(seasonStartDate, seasonEndDate);
 
+  const mapPool = async <T, R>(
+    items: T[],
+    concurrency: number,
+    worker: (item: T) => Promise<R>
+  ): Promise<R[]> => {
+    const results: R[] = new Array(items.length);
+    let next = 0;
+    const run = async () => {
+      while (next < items.length) {
+        const i = next++;
+        results[i] = await worker(items[i]);
+      }
+    };
+    const n = Math.max(1, Math.min(concurrency, items.length || 1));
+    await Promise.all(Array.from({ length: n }, () => run()));
+    return results;
+  };
+
   for (const group of orderedGroups) {
     const groupUsers = await db.getUsers(group.id);
     if (groupUsers.length === 0) continue;
     allUsers.push(...groupUsers);
     const userIds = groupUsers.map((u) => u.id);
-    for (const { year, month } of months) {
-      const monthSchedules = await db.getSchedulesForMonth(userIds, year, month, group.id);
+    const monthChunks = await mapPool(months, 4, ({ year, month }) =>
+      db.getSchedulesForMonth(userIds, year, month, group.id)
+    );
+    for (const monthSchedules of monthChunks) {
       allSchedules.push(...monthSchedules);
     }
   }

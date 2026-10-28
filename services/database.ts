@@ -14,6 +14,38 @@ import {
   WorkspaceId,
 } from '../types';
 
+export type BootstrapGeneralResult = {
+  link: AccessLink;
+  config: SystemConfig;
+  groups: Group[];
+  users: User[];
+  schedules: Schedule[];
+  year: number;
+  month: number;
+};
+
+export type BootstrapAdminResult = {
+  link: AccessLink;
+  config: SystemConfig;
+  groups: Group[];
+  workspace: { id: string; name: string; note: string };
+  groupId: GroupId;
+  users: User[];
+  histories: History[];
+  schedules: Schedule[];
+  year: number;
+  month: number;
+  unprocessedCounts: Record<string, number>;
+};
+
+function normalizeConfig(config: SystemConfig): SystemConfig {
+  return {
+    ...config,
+    holidays: Array.isArray(config.holidays) ? config.holidays : [],
+    showEmployeeId: config.showEmployeeId !== false,
+  };
+}
+
 const client = generateClient<Schema>();
 
 let accessToken: string | null = null;
@@ -79,6 +111,18 @@ export const db = {
       null
     ),
 
+  /** GENERAL 初回表示用。ensureSeed なしで一覧描画に必要な一式を返す */
+  bootstrapGeneral: async (): Promise<BootstrapGeneralResult> => {
+    const data = await invoke<BootstrapGeneralResult>('bootstrapGeneral');
+    return { ...data, config: normalizeConfig(data.config) };
+  },
+
+  /** ADMIN OVERVIEW 初回表示用。ensureSeed なし */
+  bootstrapAdmin: async (): Promise<BootstrapAdminResult> => {
+    const data = await invoke<BootstrapAdminResult>('bootstrapAdmin');
+    return { ...data, config: normalizeConfig(data.config) };
+  },
+
   getUsers: async (groupId?: GroupId): Promise<User[]> =>
     invoke<User[]>('getUsers', { groupId }),
 
@@ -109,11 +153,30 @@ export const db = {
   ): Promise<Schedule[]> =>
     invoke<Schedule[]>('getSchedulesForMonth', { userIds, year, month, groupId }),
 
-  getSchedulesForUser: async (userId: string, groupId?: GroupId): Promise<Schedule[]> =>
-    invoke<Schedule[]>('getSchedulesForUser', { userId, groupId }),
+  getSchedulesForUser: async (
+    userId: string,
+    groupId?: GroupId,
+    range?: { dateFrom: string; dateTo: string }
+  ): Promise<Schedule[]> =>
+    invoke<Schedule[]>('getSchedulesForUser', {
+      userId,
+      groupId,
+      ...(range ? { dateFrom: range.dateFrom, dateTo: range.dateTo } : {}),
+    }),
 
   updateSchedules: async (updates: Schedule[], groupId?: GroupId) => {
     await invoke('updateSchedules', { updates, groupId });
+  },
+
+  /** 予定更新＋履歴を1往復で保存（編集画面用） */
+  saveUserSchedules: async (params: {
+    userId: string;
+    userName: string;
+    groupId?: GroupId;
+    updates: Array<{ date: string; status: string }>;
+    message: string;
+  }) => {
+    await invoke('saveUserSchedules', params);
   },
 
   getHistories: async (groupId: GroupId, options: HistoryQueryOptions = {}): Promise<History[]> =>
@@ -144,12 +207,13 @@ export const db = {
     };
   },
 
-  saveConfig: async (config: SystemConfig) => {
-    await invoke('saveConfig', {
+  saveConfig: async (config: SystemConfig): Promise<SystemConfig> => {
+    const saved = await invoke<SystemConfig>('saveConfig', {
       ...config,
       holidays: Array.isArray(config.holidays) ? config.holidays : [],
       showEmployeeId: config.showEmployeeId !== false,
     });
+    return normalizeConfig(saved);
   },
 
   getWorkspaceMeta: async (): Promise<{ id: string; name: string; note: string }> =>

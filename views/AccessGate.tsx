@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { setDocumentTitle } from '../services/documentTitle';
 
 interface AccessGateProps {
   mode: 'not_found' | 'logged_out';
@@ -15,6 +16,10 @@ const AccessGate: React.FC<AccessGateProps> = ({ mode, devLinks }) => {
     import.meta.env.DEV &&
     mode === 'not_found' &&
     !!(devLinks?.ownerUrl || devLinks?.adminUrl);
+
+  useEffect(() => {
+    setDocumentTitle(isLoggedOut ? 'ログアウトしました' : 'ページが見つかりません');
+  }, [isLoggedOut]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
