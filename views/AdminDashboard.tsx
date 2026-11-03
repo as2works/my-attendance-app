@@ -6,6 +6,7 @@ import AccessLinksPanel from '../components/AccessLinksPanel';
 import GroupsPanel from '../components/GroupsPanel';
 import UserNoteButton, { hasUserNote } from '../components/UserNoteButton';
 import UserNoteModal from '../components/UserNoteModal';
+import UsersCsvImportModal from '../components/UsersCsvImportModal';
 import { db } from '../services/database';
 import { User, History, SystemConfig, Schedule, AttendanceStatus, Group, GroupId, groupLabel, userMatchesQuery, normalizeEmployeeId } from '../types';
 import { STATUS_COLORS } from '../constants';
@@ -66,6 +67,8 @@ interface AdminDashboardProps {
   } | null;
   /** 一般画面から戻ったときに OVERVIEW を軽量再取得 */
   softRefreshToken?: number;
+  /** 編集保存直後の差分（MainList と同様に即時反映） */
+  schedulePatch?: Schedule[] | null;
   syncDocumentTitle?: boolean;
 }
 
@@ -81,6 +84,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   workspaceName,
   initialData = null,
   softRefreshToken = 0,
+  schedulePatch = null,
   syncDocumentTitle = true,
 }) => {
   const hasBootData = !!initialData && initialData.year != null && initialData.month != null;
@@ -144,7 +148,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     showProcessed: false,
   });
   const softRefreshSeenRef = useRef(softRefreshToken);
+  const overviewTabSoftRefreshSkipRef = useRef(true);
   const [linksEverOpened, setLinksEverOpened] = useState(false);
+  const [csvImportOpen, setCsvImportOpen] = useState(false);
 
   const currentGroupName = groupLabel(groups, groupId);
   const otherGroups = groups.filter((g) => g.id !== groupId);
@@ -358,6 +364,44 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     void refreshData(currentYear, currentMonth, { config: false });
   }, [softRefreshToken]);
 
+  useEffect(() => {
+    if (!schedulePatch || schedulePatch.length === 0) return;
+    setSchedules((prev) => {
+      const map = new Map<string, Schedule>();
+      for (const s of prev) {
+        map.set(`${s.userId}|${s.date}`, s);
+      }
+      for (const row of schedulePatch) {
+        const key = `${row.userId}|${row.date}`;
+        if (row.status === '-') {
+          map.delete(key);
+        } else {
+          map.set(key, row);
+        }
+      }
+      return Array.from(map.values());
+    });
+  }, [schedulePatch]);
+
+  useEffect(() => {
+    if (activeTab !== 'OVERVIEW') return;
+    if (overviewTabSoftRefreshSkipRef.current) {
+      overviewTabSoftRefreshSkipRef.current = false;
+      return;
+    }
+    void refreshData(currentYear, currentMonth, { config: false });
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!syncDocumentTitle) return;
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible') return;
+      void refreshData(currentYear, currentMonth, { config: false });
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [syncDocumentTitle, currentYear, currentMonth, groupId]);
+
   const handleAddUser = async () => {
     if (!newUserName.trim()) return;
     const name = newUserName.trim();
@@ -546,8 +590,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }, 4000);
     } catch (err: any) {
       console.error(err);
-      if (String(err?.message).includes('EMPTY_SEASON')) {
+      const msg = String(err?.message || '');
+      if (msg.includes('EMPTY_SEASON')) {
         alert('シーズン開始日・終了日が正しく設定されていません。期間を確認してください。');
+      } else if (msg.includes('EXPORT_SCHEDULES_FAILED') || msg.includes('EXPORT_SCHEDULES_INVALID')) {
+        alert('出勤データの取得に失敗したため、CSVは出力しませんでした。もう一度お試しください。');
       } else {
         alert('CSVのエクスポートに失敗しました。通信状況を確認してもう一度お試しください。');
       }
@@ -647,7 +694,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </div>
 
       <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-180px)]">
-        <div className="lg:w-44 flex flex-row lg:flex-col gap-2 overflow-x-auto pb-2 lg:pb-0 shrink-0">
+        <div className="lg:w-44 flex flex-row lg:flex-col gap-2 overflow-x-auto pb-2 lg:pb-0 shrink-0 lg:h-full">
           <button
             onClick={() => setActiveTab('OVERVIEW')}
             className={`flex-1 lg:flex-none px-4 py-3 rounded-xl font-bold flex items-center justify-center lg:justify-start space-x-3 transition ${activeTab === 'OVERVIEW' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200 lg:border-none'}`}
@@ -683,6 +730,29 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <i className="fas fa-link"></i>
             <span>入場URL</span>
           </button>
+          <div className="flex-1 lg:flex-none lg:mt-auto flex flex-col gap-1.5 min-w-[8.5rem]">
+            <button
+              type="button"
+              onClick={() => void handleExportCsv()}
+              disabled={exportBusy || !config}
+              title="全グループの出勤予定をCSVでダウンロード"
+              className="w-full px-4 py-3 rounded-xl font-bold flex items-center justify-center lg:justify-start space-x-3 transition bg-slate-800 text-white hover:bg-slate-900 disabled:bg-slate-400 shadow-md"
+            >
+              {exportBusy ? (
+                <i className="fas fa-sync fa-spin"></i>
+              ) : (
+                <i className="fas fa-file-csv"></i>
+              )}
+              <span className="text-left leading-tight">
+                {exportBusy ? '作成中…' : 'CSV出力'}
+              </span>
+            </button>
+            {exportNotice && (
+              <p className="hidden lg:block text-[10px] font-bold text-emerald-600 leading-snug px-1">
+                {exportNotice}
+              </p>
+            )}
+          </div>
         </div>
 
         <div className="flex-grow min-w-0 flex flex-col h-full overflow-hidden relative">
@@ -959,11 +1029,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <span>追加</span>
                   </button>
                 </div>
-                {showEmployeeId && (
-                  <p className="text-[11px] text-slate-400 font-medium">
-                    ユーザIDは出勤・給与システム連携用です。未設定でも追加できます。
-                  </p>
-                )}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  {showEmployeeId ? (
+                    <p className="text-[11px] text-slate-400 font-medium">
+                      ユーザIDは出勤・給与システム連携用です。未設定でも追加できます。
+                    </p>
+                  ) : (
+                    <span />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setCsvImportOpen(true)}
+                    className="self-start sm:self-auto px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-sm font-bold flex items-center gap-2"
+                  >
+                    <i className="fas fa-file-csv"></i>
+                    CSV取込
+                  </button>
+                </div>
               </div>
 
               <div className="bg-white rounded-3xl border border-slate-200 divide-y divide-slate-100 overflow-hidden shadow-sm">
@@ -1098,7 +1180,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <span>
                     <span className="block text-sm font-black text-slate-800">ユーザIDを表示する</span>
                     <span className="block text-xs text-slate-500 font-medium mt-0.5 leading-relaxed">
-                      OFFにすると一覧・利用者管理からユーザID列を隠します（初期はON）。CSVのユーザID列は残ります。
+                      OFFにすると一覧・利用者管理からユーザID列を隠します（初期はON）。出勤CSVのID列は残ります。
                     </span>
                   </span>
                 </label>
@@ -1155,45 +1237,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h4 className="text-base font-black text-slate-800">出勤データ CSV エクスポート</h4>
-                    <p className="text-xs text-slate-500 font-medium mt-1 leading-relaxed">
-                      全グループの全員を表示順で出力します。期間はシーズン開始日（{config.seasonStartDate}）〜終了日（{config.seasonEndDate}）。列は ユーザID・名前・各日付です（Excel / VBA 取込向け UTF-8）。
-                    </p>
-                  </div>
-                  {exportNotice && (
-                    <p className="text-sm font-bold text-emerald-600 animate-in fade-in duration-200">
-                      <i className="fas fa-check-circle mr-1.5"></i>
-                      {exportNotice}
-                    </p>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={handleExportCsv}
-                  disabled={exportBusy}
-                  className="w-full bg-slate-800 hover:bg-slate-900 disabled:bg-slate-400 text-white font-black py-4 rounded-2xl transition shadow-lg flex items-center justify-center gap-3 active:scale-[0.98]"
-                >
-                  {exportBusy ? (
-                    <>
-                      <i className="fas fa-sync fa-spin"></i>
-                      <span>作成中…</span>
-                    </>
-                  ) : (
-                    <>
-                      <i className="fas fa-file-csv"></i>
-                      <span>全員分を CSV ダウンロード</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
               <div className="p-6 bg-indigo-50/50 rounded-2xl border border-indigo-100 flex gap-4">
                 <i className="fas fa-info-circle text-indigo-500 text-xl pt-1"></i>
                 <p className="text-sm text-indigo-900 leading-relaxed font-bold">
-                  期間・休日は全グループ共通です。
+                  期間・休日は全グループ共通です。出勤CSVは左メニューの「CSV出力」からダウンロードできます。
                 </p>
               </div>
             </div>
@@ -1274,6 +1321,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {csvImportOpen && (
+        <UsersCsvImportModal
+          groups={groups}
+          onClose={() => setCsvImportOpen(false)}
+          onCompleted={async () => {
+            await onGroupsChange();
+            await refreshData(currentYear, currentMonth, { config: false });
+          }}
+        />
       )}
 
       {moveUserId && (

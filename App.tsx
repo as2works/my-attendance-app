@@ -261,6 +261,9 @@ const App: React.FC = () => {
 
   const handleEditSaved = (updates: Schedule[]) => {
     setSchedulePatch(updates);
+    if (isAdminUser) {
+      setAdminSoftRefreshToken((n) => n + 1);
+    }
   };
 
   const handleEditBack = () => {
@@ -415,6 +418,7 @@ const App: React.FC = () => {
             workspaceName={workspaceName}
             initialData={adminInitialData}
             softRefreshToken={adminSoftRefreshToken}
+            schedulePatch={schedulePatch}
             syncDocumentTitle={view === 'ADMIN'}
           />
         </div>

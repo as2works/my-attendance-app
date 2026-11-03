@@ -270,6 +270,8 @@ const WorkspacePortal: React.FC<WorkspacePortalProps> = ({ onLogout }) => {
                           {ws.adminLinkId && (
                             <a
                               href={buildAccessUrl(ws.adminLinkId)}
+                              target="_blank"
+                              rel="noopener noreferrer"
                               className="px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg hover:bg-indigo-100"
                             >
                               開く

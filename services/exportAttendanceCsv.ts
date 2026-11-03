@@ -28,18 +28,23 @@ function escapeCsvCell(value: string): string {
   return value;
 }
 
-/** Excel が数字のユーザIDを数値化しないよう数式形式にする */
-function csvEmployeeIdCell(id: string): string {
-  if (!id) return '';
-  if (/^\d+$/.test(id)) {
-    return `"=""${id.replace(/"/g, '""')}"""`;
-  }
-  return escapeCsvCell(id);
+/** 内部日付キー YYYY-MM-DD → Excel突合用 YYYY/MM/DD */
+export function toExcelDateHeader(dateKey: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (!m) return dateKey;
+  return `${m[1]}/${m[2]}/${m[3]}`;
+}
+
+/** 出勤未入力は空欄。'-' は出さない */
+function csvStatusCell(status: AttendanceStatus | undefined): string {
+  if (!status || status === '-') return '';
+  return escapeCsvCell(status);
 }
 
 export function buildAttendanceCsv(params: {
   users: User[];
   schedules: Schedule[];
+  /** YYYY-MM-DD（シーズン内日付） */
   dates: string[];
 }): string {
   const { users, schedules, dates } = params;
@@ -48,13 +53,13 @@ export function buildAttendanceCsv(params: {
     statusByKey.set(`${s.userId}|${s.date}`, s.status);
   }
 
-  const header = ['ユーザID', '名前', ...dates].map(escapeCsvCell).join(',');
+  const header = ['ID', '氏名', ...dates.map(toExcelDateHeader)].map(escapeCsvCell).join(',');
   const rows = users.map((user) => {
     const id = normalizeEmployeeId(user.employeeId);
     const cells = [
-      csvEmployeeIdCell(id),
+      escapeCsvCell(id),
       escapeCsvCell(user.name),
-      ...dates.map((date) => escapeCsvCell(statusByKey.get(`${user.id}|${date}`) || '-')),
+      ...dates.map((date) => csvStatusCell(statusByKey.get(`${user.id}|${date}`))),
     ];
     return cells.join(',');
   });
@@ -77,8 +82,8 @@ export function downloadTextFile(filename: string, content: string, mime = 'text
 }
 
 /**
- * 全グループの利用者を表示順（グループ順 → グループ内 order）で集め、
- * シーズン開始日〜終了日の出勤予定を CSV にしてダウンロードする。
+ * 全グループの利用者を集め、シーズン開始日〜終了日の出勤予定を CSV にしてダウンロードする。
+ * Excel / VBA 取込向け: UTF-8 BOM、ヘッダ ID/氏名/YYYY/MM/DD、未入力は空欄。
  */
 export async function exportAllAttendanceCsv(params: {
   groups: Group[];
@@ -119,16 +124,28 @@ export async function exportAllAttendanceCsv(params: {
     if (groupUsers.length === 0) continue;
     allUsers.push(...groupUsers);
     const userIds = groupUsers.map((u) => u.id);
-    const monthChunks = await mapPool(months, 4, ({ year, month }) =>
-      db.getSchedulesForMonth(userIds, year, month, group.id)
-    );
+    let monthChunks: Schedule[][];
+    try {
+      monthChunks = await mapPool(months, 4, ({ year, month }) =>
+        db.getSchedulesForMonth(userIds, year, month, group.id)
+      );
+    } catch (err) {
+      console.error('CSV export schedule fetch failed', { groupId: group.id, err });
+      throw new Error(`EXPORT_SCHEDULES_FAILED:${group.name}`);
+    }
     for (const monthSchedules of monthChunks) {
+      if (!Array.isArray(monthSchedules)) {
+        throw new Error(`EXPORT_SCHEDULES_INVALID:${group.name}`);
+      }
       allSchedules.push(...monthSchedules);
     }
   }
 
   const csv = buildAttendanceCsv({ users: allUsers, schedules: allSchedules, dates });
-  const filename = `attendance_${seasonStartDate}_${seasonEndDate}.csv`;
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+  const filename = `出勤確認表_${stamp}.csv`;
   downloadTextFile(filename, csv);
 
   return { userCount: allUsers.length, dateCount: dates.length, filename };

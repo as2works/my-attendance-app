@@ -210,33 +210,92 @@ function getSeasonDisplayPeriod(
   return { year: today.getFullYear(), month: today.getMonth() };
 }
 
+/** 同時実行数を制限して Promise を回す（80人規模の Query 用） */
+async function mapPoolConcurrent<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const run = async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await worker(items[i]);
+    }
+  };
+  const n = Math.max(1, Math.min(concurrency, items.length || 1));
+  await Promise.all(Array.from({ length: n }, () => run()));
+  return results;
+}
+
+type ScheduleRow = { userId: string; date: string; status: string };
+
+function mapScheduleRows(
+  data: Array<{ userId?: string | null; date?: string | null; status?: string | null }>
+): ScheduleRow[] {
+  return data
+    .filter((s) => s.userId && s.date && s.status != null)
+    .map((s) => ({
+      userId: s.userId as string,
+      date: s.date as string,
+      status: s.status as string,
+    }));
+}
+
+/**
+ * Schedule は identifier(['userId','date'])。
+ * 複合PK Query のみ使う（filter Scan はしない）。
+ * 日付付き Query が失敗したら userId のみ Query → メモリで日付絞り込み。
+ */
+async function listSchedulesForUserQuery(
+  userId: string,
+  dateRange?: { from: string; to: string } | null
+): Promise<ScheduleRow[]> {
+  const listByPk = (opts: { withDate: boolean }) =>
+    listAllByFilter((nextToken) =>
+      client.models.Schedule.list({
+        userId,
+        ...(opts.withDate && dateRange
+          ? { date: { between: [dateRange.from, dateRange.to] as [string, string] } }
+          : {}),
+        limit: 200,
+        ...(nextToken ? { nextToken } : {}),
+      }).then((r) => ({ data: r.data, nextToken: r.nextToken, errors: r.errors }))
+    );
+
+  try {
+    if (dateRange) {
+      return mapScheduleRows(await listByPk({ withDate: true }));
+    }
+    return mapScheduleRows(await listByPk({ withDate: false }));
+  } catch (err) {
+    if (!dateRange) {
+      console.error('Schedule PK query failed', { userId, err });
+      throw err;
+    }
+    console.error('Schedule PK+date query failed; retrying userId-only query', { userId, dateRange, err });
+    try {
+      const all = mapScheduleRows(await listByPk({ withDate: false }));
+      return all.filter((s) => s.date >= dateRange.from && s.date <= dateRange.to);
+    } catch (err2) {
+      console.error('Schedule PK query retry failed', { userId, err2 });
+      throw err2;
+    }
+  }
+}
+
 async function listSchedulesForUserIdsInMonth(
   userIds: string[],
   year: number,
   month: number
-): Promise<Array<{ userId: string; date: string; status: string }>> {
+): Promise<ScheduleRow[]> {
   if (!userIds.length) return [];
   const { start, end } = monthBounds(year, month);
-  const pages = await Promise.all(
-    userIds.map(async (userId) => {
-      const { data } = await client.models.Schedule.list({
-        filter: {
-          and: [
-            { userId: { eq: userId } },
-            { date: { ge: start } },
-            { date: { le: end } },
-          ],
-        },
-        limit: 40,
-      });
-      return data;
-    })
+  const pages = await mapPoolConcurrent(userIds, 10, (userId) =>
+    listSchedulesForUserQuery(userId, { from: start, to: end })
   );
-  return pages.flat().map((s) => ({
-    userId: s.userId,
-    date: s.date,
-    status: s.status,
-  }));
+  return pages.flat();
 }
 
 async function resolveSession(token?: string | null): Promise<Session> {
@@ -663,31 +722,63 @@ async function buildWorkspaceListItem(ws: WorkspaceRecord) {
 }
 
 async function listAllByFilter<T>(
-  fetchPage: (nextToken?: string) => Promise<{ data: T[]; nextToken?: string | null }>
+  fetchPage: (
+    nextToken?: string
+  ) => Promise<{ data: T[]; nextToken?: string | null; errors?: Array<{ message?: string }> | null }>
 ): Promise<T[]> {
   const all: T[] = [];
   let nextToken: string | undefined;
   do {
     const page = await fetchPage(nextToken);
-    all.push(...page.data);
+    if (page.errors?.length) {
+      fail('LIST_FAILED', page.errors[0]?.message || 'LIST_FAILED');
+    }
+    all.push(...(page.data || []));
     nextToken = page.nextToken ?? undefined;
   } while (nextToken);
   return all;
 }
 
+function assertNoAmplifyErrors(
+  errors: Array<{ message?: string }> | null | undefined,
+  label: string
+) {
+  if (errors?.length) {
+    fail('SAVE_FAILED', errors[0]?.message || label);
+  }
+}
+
+async function upsertScheduleRow(userId: string, date: string, status: string) {
+  const { data: existing, errors: getErrors } = await client.models.Schedule.get({
+    userId,
+    date,
+  });
+  assertNoAmplifyErrors(getErrors, 'schedule get failed');
+  if (existing) {
+    const { errors } = await client.models.Schedule.update({ userId, date, status });
+    assertNoAmplifyErrors(errors, 'schedule update failed');
+  } else {
+    const { errors } = await client.models.Schedule.create({ userId, date, status });
+    assertNoAmplifyErrors(errors, 'schedule create failed');
+  }
+}
+
 async function deleteSchedulesForUser(userId: string) {
-  let nextToken: string | undefined;
-  do {
-    const page = await client.models.Schedule.list({
-      filter: { userId: { eq: userId } },
-      limit: 200,
-      ...(nextToken ? { nextToken } : {}),
-    });
+  // 複合PK Query で当該ユーザーの全日程を取得してから削除（Scan 取りこぼし防止）
+  const rows = await listSchedulesForUserQuery(userId, null);
+  const chunkSize = 25;
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize);
     await Promise.all(
-      page.data.map((s) => client.models.Schedule.delete({ userId: s.userId, date: s.date }))
+      chunk.map(async (s) => {
+        const { errors } = await client.models.Schedule.delete({
+          userId: s.userId,
+          date: s.date,
+        });
+        assertNoAmplifyErrors(errors, 'schedule delete failed');
+      })
     );
-    nextToken = page.nextToken ?? undefined;
-  } while (nextToken);
+  }
 }
 
 async function deleteWorkspaceCascade(workspaceId: string) {
@@ -1306,30 +1397,9 @@ export const handler = async (event: { arguments: Args }) => {
           typeof payload.dateTo === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(payload.dateTo)
             ? payload.dateTo
             : null;
-        const filter =
-          dateFrom && dateTo
-            ? {
-                and: [
-                  { userId: { eq: payload.userId } },
-                  { date: { ge: dateFrom } },
-                  { date: { le: dateTo } },
-                ],
-              }
-            : { userId: { eq: payload.userId } };
-        const data = await listAllByFilter((nextToken) =>
-          client.models.Schedule.list({
-            filter,
-            limit: 200,
-            ...(nextToken ? { nextToken } : {}),
-          }).then((r) => ({ data: r.data, nextToken: r.nextToken }))
-        );
-        return ok(
-          data.map((s) => ({
-            userId: s.userId,
-            date: s.date,
-            status: s.status,
-          }))
-        );
+        const range =
+          dateFrom && dateTo ? { from: dateFrom, to: dateTo } : null;
+        return ok(await listSchedulesForUserQuery(payload.userId, range));
       }
       case 'updateSchedules': {
         const workspaceId = requireWorkspaceSession(session);
@@ -1346,27 +1416,13 @@ export const handler = async (event: { arguments: Args }) => {
             fail('INVALID_STATUS', update.status);
           }
         }
-        await Promise.all(
-          updates.map(async (update) => {
-            const existing = await client.models.Schedule.get({
-              userId: update.userId,
-              date: update.date,
-            });
-            if (existing.data) {
-              await client.models.Schedule.update({
-                userId: update.userId,
-                date: update.date,
-                status: update.status,
-              });
-            } else {
-              await client.models.Schedule.create({
-                userId: update.userId,
-                date: update.date,
-                status: update.status,
-              });
-            }
-          })
-        );
+        const chunkSize = 25;
+        for (let i = 0; i < updates.length; i += chunkSize) {
+          const chunk = updates.slice(i, i + chunkSize);
+          await Promise.all(
+            chunk.map((update) => upsertScheduleRow(update.userId, update.date, update.status))
+          );
+        }
         return ok(true);
       }
       case 'saveUserSchedules': {
@@ -1382,27 +1438,13 @@ export const handler = async (event: { arguments: Args }) => {
             fail('INVALID_STATUS', update.status);
           }
         }
-        await Promise.all(
-          updates.map(async (update) => {
-            const existing = await client.models.Schedule.get({
-              userId,
-              date: update.date,
-            });
-            if (existing.data) {
-              await client.models.Schedule.update({
-                userId,
-                date: update.date,
-                status: update.status,
-              });
-            } else {
-              await client.models.Schedule.create({
-                userId,
-                date: update.date,
-                status: update.status,
-              });
-            }
-          })
-        );
+        const chunkSize = 25;
+        for (let i = 0; i < updates.length; i += chunkSize) {
+          const chunk = updates.slice(i, i + chunkSize);
+          await Promise.all(
+            chunk.map((update) => upsertScheduleRow(userId, update.date, update.status))
+          );
+        }
         const message =
           typeof payload.message === 'string' && payload.message.trim()
             ? payload.message.trim().slice(0, 2000)
