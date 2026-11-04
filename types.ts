@@ -104,7 +104,15 @@ export interface AccessLink {
   groupId?: GroupId;
 }
 
-export type ViewState = 'MAIN' | 'EDIT' | 'ADMIN' | 'PORTAL' | 'NOT_FOUND' | 'LOGGED_OUT';
+export type ViewState =
+  | 'MAIN'
+  | 'EDIT'
+  | 'ADMIN'
+  | 'PORTAL'
+  | 'NOT_FOUND'
+  | 'LOGGED_OUT'
+  | 'MANUAL_GENERAL'
+  | 'MANUAL_ADMIN';
 
 export interface AccessSession {
   linkId: string;

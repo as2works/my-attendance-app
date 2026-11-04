@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { setDocumentTitle } from '../services/documentTitle';
+import { ADMIN_MANUAL_PATH, GENERAL_MANUAL_PATH } from '../services/manualPath';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -11,6 +12,10 @@ interface LayoutProps {
   onNavigate?: () => void;
   /** hidden 保持中の画面では false（タブタイトルの上書き防止） */
   syncDocumentTitle?: boolean;
+  /** 一般向けマニュアル（新規タブ・ログイン不要） */
+  showGeneralManualLink?: boolean;
+  /** 管理者向けマニュアル（新規タブ・ログイン不要） */
+  showAdminManualLink?: boolean;
 }
 
 const Layout: React.FC<LayoutProps> = ({
@@ -21,6 +26,8 @@ const Layout: React.FC<LayoutProps> = ({
   navTarget,
   onNavigate,
   syncDocumentTitle = true,
+  showGeneralManualLink = false,
+  showAdminManualLink = false,
 }) => {
   const showNav = !!(isAdmin && onNavigate && navTarget);
   const navLabel = navTarget === 'ADMIN' ? '管理者画面へ' : '一般画面へ';
@@ -39,6 +46,30 @@ const Layout: React.FC<LayoutProps> = ({
             <h1 className="text-sm sm:text-xl font-bold tracking-tight truncate">{title}</h1>
           </div>
           <div className="flex items-center space-x-2 sm:space-x-4 shrink-0">
+            {showGeneralManualLink && (
+              <a
+                href={GENERAL_MANUAL_PATH}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs sm:text-sm font-medium hover:text-indigo-200 transition whitespace-nowrap"
+                title="使い方マニュアル（一般）"
+              >
+                <i className="fas fa-book-open sm:mr-1"></i>
+                <span className="hidden sm:inline">使い方</span>
+              </a>
+            )}
+            {showAdminManualLink && (
+              <a
+                href={ADMIN_MANUAL_PATH}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs sm:text-sm font-medium hover:text-indigo-200 transition whitespace-nowrap"
+                title="使い方マニュアル（管理者）"
+              >
+                <i className="fas fa-book-open sm:mr-1"></i>
+                <span className="hidden sm:inline">使い方</span>
+              </a>
+            )}
             {showNav && (
               <button
                 type="button"

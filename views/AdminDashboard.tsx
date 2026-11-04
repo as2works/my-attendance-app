@@ -630,7 +630,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   if (loadError && !config) {
     return (
-      <Layout title="管理者パネル" onLogout={onLogout} syncDocumentTitle={syncDocumentTitle}>
+      <Layout
+        title="管理者パネル"
+        onLogout={onLogout}
+        syncDocumentTitle={syncDocumentTitle}
+        showAdminManualLink
+      >
         <div className="max-w-md mx-auto mt-16 bg-white p-8 rounded-3xl border border-rose-100 text-center shadow-sm">
           <i className="fas fa-exclamation-triangle text-4xl text-rose-500 mb-4"></i>
           <p className="text-slate-700 font-bold mb-6">{loadError}</p>
@@ -656,6 +661,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       navTarget="MAIN"
       onNavigate={onNavigateGeneral}
       syncDocumentTitle={syncDocumentTitle}
+      showAdminManualLink
     >
       {loadError && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900">

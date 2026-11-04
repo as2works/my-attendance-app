@@ -15,8 +15,11 @@ import EditSchedule from './views/EditSchedule';
 import AdminDashboard from './views/AdminDashboard';
 import WorkspacePortal from './views/WorkspacePortal';
 import AccessGate from './views/AccessGate';
+import AdminManual from './views/manual/AdminManual';
+import GeneralManual from './views/manual/GeneralManual';
 import { db, setAccessToken, type BootstrapAdminResult } from './services/database';
 import { getAccessTokenFromPath, buildAccessUrl } from './services/accessPath';
+import { isAdminManualPath, isAnyManualPath, isGeneralManualPath } from './services/manualPath';
 
 type AdminInitialData = {
   users: User[];
@@ -29,7 +32,11 @@ type AdminInitialData = {
 };
 
 const App: React.FC = () => {
-  const [view, setView] = useState<ViewState>('MAIN');
+  const [view, setView] = useState<ViewState>(() => {
+    if (isGeneralManualPath()) return 'MANUAL_GENERAL';
+    if (isAdminManualPath()) return 'MANUAL_ADMIN';
+    return 'MAIN';
+  });
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -37,7 +44,7 @@ const App: React.FC = () => {
   const [workspaceName, setWorkspaceName] = useState('');
   const [selectedGroupId, setSelectedGroupId] = useState<GroupId>(DEFAULT_GROUP_IDS.DORM);
   const [bootError, setBootError] = useState<string | null>(null);
-  const [isBooting, setIsBooting] = useState(true);
+  const [isBooting, setIsBooting] = useState(() => !isAnyManualPath());
   const [mainInitialData, setMainInitialData] = useState<{
     users: User[];
     schedules: Schedule[];
@@ -88,6 +95,15 @@ const App: React.FC = () => {
   useEffect(() => {
     const init = async () => {
       try {
+        if (isGeneralManualPath()) {
+          setView('MANUAL_GENERAL');
+          return;
+        }
+        if (isAdminManualPath()) {
+          setView('MANUAL_ADMIN');
+          return;
+        }
+
         if (import.meta.env.DEV) {
           const seed = await db.ensureSeed({ discloseBootstrapLinks: true });
           const ownerUrl = seed.ownerLinkId ? buildAccessUrl(seed.ownerLinkId) : undefined;
@@ -310,20 +326,31 @@ const App: React.FC = () => {
     setView('ADMIN');
   };
 
+  if (view === 'MANUAL_GENERAL') {
+    return <GeneralManual />;
+  }
+
+  if (view === 'MANUAL_ADMIN') {
+    return <AdminManual />;
+  }
+
   if (bootError) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
-        <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full border border-rose-100 text-center">
-          <i className="fas fa-exclamation-triangle text-5xl text-rose-500 mb-6"></i>
-          <h2 className="text-2xl font-black text-slate-800 mb-4">接続エラー</h2>
-          <p className="text-slate-600 mb-8 leading-relaxed font-medium">{bootError}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="w-full bg-slate-800 text-white font-bold py-4 rounded-2xl hover:bg-slate-900 transition"
-          >
-            再読み込み
-          </button>
+      <div className="flex min-h-screen flex-col bg-slate-50">
+        <div className="flex flex-1 items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-3xl border border-rose-100 bg-white p-8 text-center shadow-xl">
+            <i className="fas fa-exclamation-triangle mb-6 text-5xl text-rose-500"></i>
+            <h2 className="mb-4 text-2xl font-black text-slate-800">接続エラー</h2>
+            <p className="mb-8 font-medium leading-relaxed text-slate-600">{bootError}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full rounded-2xl bg-slate-800 py-4 font-bold text-white transition hover:bg-slate-900"
+            >
+              再読み込み
+            </button>
+          </div>
         </div>
+        <p className="pb-6 text-center text-sm text-slate-500">&copy; AS2WORKS</p>
       </div>
     );
   }

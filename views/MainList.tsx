@@ -201,6 +201,7 @@ const MainList: React.FC<MainListProps> = ({
       navTarget="ADMIN"
       onNavigate={onNavigateAdmin}
       syncDocumentTitle={syncDocumentTitle}
+      showGeneralManualLink
     >
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="p-4 sm:p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-slate-50/50">
