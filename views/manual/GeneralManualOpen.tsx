@@ -87,7 +87,7 @@ const GeneralManualOpen: React.FC = () => (
                     <p className="text-[11px] font-medium leading-relaxed text-slate-500">
                       下のリンクを開いて、自分の名前から予定を入れてください。
                     </p>
-                    <p className="break-all rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5 text-[11px] font-bold leading-relaxed text-indigo-700 underline decoration-indigo-300 underline-offset-2 ring-2 ring-teal-400 ring-offset-2">
+                    <p className="break-all rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5 text-[11px] font-bold leading-relaxed text-indigo-700 underline decoration-indigo-300 underline-offset-2 ring-2 ring-teal-400">
                       https://example.amplifyapp.com/f1e2d3c4-b5a6-7980-...
                     </p>
                   </div>

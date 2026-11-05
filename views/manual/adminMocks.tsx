@@ -32,38 +32,38 @@ export const AdminAppShellMock: React.FC<{
   ];
 
   return (
-    <div className="relative w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-[0_20px_50px_-24px_rgba(15,23,42,0.4)]">
+    <div className="relative w-full min-w-0 max-w-full rounded-2xl border border-slate-200 bg-slate-50 shadow-[0_20px_50px_-24px_rgba(15,23,42,0.4)]">
       <div className="flex items-center justify-between gap-2 bg-indigo-600 px-3 py-2.5 text-white sm:px-4">
         <div className="flex min-w-0 items-center gap-2">
-          <i className="fas fa-calendar-check text-sm" />
+          <i className="fas fa-calendar-check shrink-0 text-sm" />
           <span className="truncate text-xs font-bold sm:text-sm">管理者パネル・サンプル箱（寮）</span>
         </div>
-        <div className="flex shrink-0 items-center gap-2 text-[10px] font-medium sm:text-xs">
+        <div className="flex shrink-0 items-center gap-1.5 text-[10px] font-medium sm:gap-2 sm:text-xs">
           <span className="hidden sm:inline">使い方</span>
-          <span>一般画面へ</span>
+          <span className="hidden sm:inline">一般画面へ</span>
           <span className="rounded-lg bg-indigo-700 px-2 py-1">
             <i className="fas fa-sign-out-alt" />
           </span>
         </div>
       </div>
 
-      <div className="p-3 sm:p-4">
+      <div className="min-w-0 p-3 sm:p-4">
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <span className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 shadow-sm">
             寮 ▾
           </span>
           <span
             className={`inline-flex items-center rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-black text-rose-600 ${
-              highlightBadge ? 'ring-2 ring-teal-400 ring-offset-2' : ''
+              highlightBadge ? 'ring-2 ring-teal-400' : ''
             }`}
           >
             未消込 3
           </span>
-          <span className="inline-flex items-center rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-700">
+          <span className="inline-flex max-w-full break-words rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-black leading-snug text-amber-700">
             他グループにも未消込 1
           </span>
         </div>
-        <p className="mb-3 text-[10px] font-medium text-slate-500 sm:text-xs">
+        <p className="mb-3 break-words text-[10px] font-medium leading-relaxed text-slate-500 sm:text-xs">
           表示・追加・履歴は、いま選んでいる「寮」だけが対象です。
         </p>
 
@@ -85,7 +85,7 @@ export const AdminAppShellMock: React.FC<{
             <div
               className={`mt-auto flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold shadow-md ${
                 highlightCsv || activeNav === 'csv'
-                  ? 'bg-teal-600 text-white ring-2 ring-teal-300 ring-offset-2'
+                  ? 'bg-teal-600 text-white ring-2 ring-teal-300'
                   : 'bg-slate-800 text-white'
               }`}
             >
@@ -121,35 +121,90 @@ export const AdminOverviewScheduleMock: React.FC<{ highlightMonth?: boolean }> =
     { id: '42', name: '中村　蓮', cells: ['', '〇', '〇', 'PM', '〇', '', '×'] },
   ];
 
+  const mobileDays = days.slice(0, 4);
+
+  const renderRows = (dayCols: typeof days) =>
+    rows.map((row) => (
+      <tr key={row.id} className="group">
+        <td className="sticky left-0 z-10 border-b border-r border-slate-200 bg-white px-1.5 py-2 font-bold text-slate-700 sm:px-2">
+          <div className="hidden text-[9px] font-bold leading-tight text-slate-400 sm:block">{row.id}</div>
+          <div className="break-words text-[11px] leading-tight">{row.name}</div>
+        </td>
+        {dayCols.map((day) => {
+          const i = days.indexOf(day);
+          const c = row.cells[i] ?? '';
+          return (
+            <td
+              key={`${row.id}-${day.d}`}
+              className={`border-b border-r border-slate-100 px-0 py-1.5 text-center last:border-r-0 ${
+                day.tone.includes('blue')
+                  ? 'bg-blue-50/40'
+                  : day.tone.includes('rose')
+                    ? 'bg-rose-50/40'
+                    : ''
+              }`}
+            >
+              <div
+                className={`mx-auto flex h-6 w-6 items-center justify-center rounded-md border text-[9px] font-black ${
+                  STATUS_CELL[c] ?? STATUS_CELL['']
+                } ${!c ? 'border-dashed border-amber-200 bg-amber-50/40' : ''}`}
+              >
+                {c}
+              </div>
+            </td>
+          );
+        })}
+      </tr>
+    ));
+
   return (
     <AdminAppShellMock activeNav="overview">
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50/50 px-3 py-2.5">
-          <h3 className="flex items-center gap-2 text-sm font-black text-slate-800">
-            <i className="fas fa-calendar-alt text-indigo-500" />
-            寮・出勤予定一覧
+      <div className="min-w-0 max-w-full rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-2 border-b border-slate-100 bg-slate-50/50 px-3 py-2.5 sm:flex-row sm:flex-wrap sm:items-center">
+          <h3 className="flex min-w-0 items-center gap-2 text-sm font-black text-slate-800">
+            <i className="fas fa-calendar-alt shrink-0 text-indigo-500" />
+            <span className="truncate">寮・出勤予定一覧</span>
           </h3>
-          <label className="relative min-w-[160px] flex-1">
+          <label className="relative w-full min-w-0 flex-1 sm:min-w-[160px]">
             <i className="fas fa-search absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400" />
-            <span className="block rounded-xl border border-slate-200 bg-white py-1.5 pl-8 pr-2 text-[11px] font-medium text-slate-400">
-              氏名・ユーザIDで検索（履歴タップ可）
+            <span className="block truncate rounded-xl border border-slate-200 bg-white py-1.5 pl-8 pr-2 text-[11px] font-medium text-slate-400">
+              氏名・ユーザIDで検索
             </span>
           </label>
           <div
-            className={`ml-auto flex items-center space-x-2 rounded-lg border border-slate-200 bg-white px-2 py-1 shadow-sm ${
-              highlightMonth ? 'ring-2 ring-teal-400 ring-offset-2' : ''
+            className={`flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1 shadow-sm sm:ml-auto sm:w-auto ${
+              highlightMonth ? 'ring-2 ring-teal-400' : ''
             }`}
           >
             <span className="p-1 text-slate-400">
               <i className="fas fa-chevron-left text-[10px]" />
             </span>
-            <span className="min-w-[72px] text-center text-xs font-bold">2026年 12月</span>
+            <span className="min-w-0 text-center text-xs font-bold">2026年 12月</span>
             <span className="p-1 text-slate-400">
               <i className="fas fa-chevron-right text-[10px]" />
             </span>
           </div>
         </div>
-        <div className="overflow-x-auto">
+        <div className="min-w-0 sm:hidden">
+          <table className="w-full border-separate border-spacing-0 text-left text-xs">
+            <thead className="bg-slate-50 font-bold text-slate-500">
+              <tr>
+                <th className="w-[88px] border-b border-r border-slate-200 bg-slate-50 px-1.5 py-2">氏名</th>
+                {mobileDays.map((day) => (
+                  <th
+                    key={day.d}
+                    className={`border-b border-r border-slate-200 px-0.5 py-1.5 text-center last:border-r-0 ${day.tone}`}
+                  >
+                    <div className="text-[8px] opacity-70">{day.w}</div>
+                    <div className="font-black">{day.d}</div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>{renderRows(mobileDays)}</tbody>
+          </table>
+        </div>
+        <div className="hidden min-w-0 overflow-x-auto overscroll-x-contain sm:block">
           <table className="w-full border-separate border-spacing-0 text-left text-xs">
             <thead className="bg-slate-50 font-bold text-slate-500">
               <tr>
@@ -167,36 +222,7 @@ export const AdminOverviewScheduleMock: React.FC<{ highlightMonth?: boolean }> =
                 ))}
               </tr>
             </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.id} className="group">
-                  <td className="sticky left-0 z-10 border-b border-r border-slate-200 bg-white px-2 py-2 font-bold text-slate-700">
-                    <div className="text-[9px] font-bold leading-tight text-slate-400">{row.id}</div>
-                    <div className="truncate text-[11px] leading-tight">{row.name}</div>
-                  </td>
-                  {row.cells.map((c, i) => (
-                    <td
-                      key={i}
-                      className={`border-b border-r border-slate-100 px-0 py-1.5 text-center last:border-r-0 ${
-                        days[i].tone.includes('blue')
-                          ? 'bg-blue-50/40'
-                          : days[i].tone.includes('rose')
-                            ? 'bg-rose-50/40'
-                            : ''
-                      }`}
-                    >
-                      <div
-                        className={`mx-auto flex h-6 w-6 items-center justify-center rounded-md border text-[9px] font-black ${
-                          STATUS_CELL[c] ?? STATUS_CELL['']
-                        } ${!c ? 'border-dashed border-amber-200 bg-amber-50/40' : ''}`}
-                      >
-                        {c}
-                      </div>
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
+            <tbody>{renderRows(days)}</tbody>
           </table>
         </div>
       </div>
@@ -247,9 +273,9 @@ export const AdminLinksScreenMock: React.FC<{ highlightGeneral?: boolean }> = ({
     <div className="space-y-3">
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-sm font-black text-slate-800">管理者用（他の人に送らない）</p>
-            <p className="mt-1 break-all font-mono text-[11px] font-bold text-indigo-700">
+            <p className="mt-1 break-all font-mono text-[11px] font-bold leading-relaxed text-indigo-700">
               https://example.amplifyapp.com/a1b2c3d4-e5f6-7890-abcd-ef1234567890
             </p>
           </div>
@@ -272,9 +298,9 @@ export const AdminLinksScreenMock: React.FC<{ highlightGeneral?: boolean }> = ({
         }`}
       >
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-sm font-black text-slate-800">一般用・寮</p>
-            <p className="mt-1 break-all font-mono text-[11px] font-bold text-indigo-700">
+            <p className="mt-1 break-all font-mono text-[11px] font-bold leading-relaxed text-indigo-700">
               https://example.amplifyapp.com/f1e2d3c4-b5a6-7980-1234-567890abcdef
             </p>
           </div>
@@ -321,7 +347,7 @@ export const AdminConfigScreenMock: React.FC<{
         </div>
         <div
           className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${
-            highlightDates ? 'rounded-xl ring-2 ring-teal-400 ring-offset-2' : ''
+            highlightDates ? 'rounded-xl ring-2 ring-teal-400' : ''
           }`}
         >
           <div>
@@ -350,7 +376,7 @@ export const AdminConfigScreenMock: React.FC<{
         </div>
         <div
           className={`flex items-center justify-center gap-2 rounded-xl bg-emerald-500 py-3 text-xs font-black text-white shadow-md shadow-emerald-100 sm:text-sm ${
-            highlightSave ? 'ring-2 ring-teal-400 ring-offset-2' : ''
+            highlightSave ? 'ring-2 ring-teal-400' : ''
           }`}
         >
           <i className="fas fa-save" />
@@ -489,7 +515,7 @@ export const AdminUsersScreenMock: React.FC<{ highlightCsv?: boolean }> = ({
           </p>
           <span
             className={`inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-bold text-slate-700 ${
-              highlightCsv ? 'ring-2 ring-teal-400 ring-offset-2' : ''
+              highlightCsv ? 'ring-2 ring-teal-400' : ''
             }`}
           >
             <i className="fas fa-file-csv" />

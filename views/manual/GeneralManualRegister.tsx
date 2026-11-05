@@ -47,7 +47,7 @@ const GeneralManualRegister: React.FC = () => (
       ]}
     />
 
-    <div id="steps" className="space-y-8 sm:space-y-10">
+    <div id="steps" className="min-w-0 max-w-full space-y-8 sm:space-y-10">
       <StepCard>
         <div className="mb-3 flex items-center gap-3">
           <StepBadge n={1} />
@@ -71,7 +71,7 @@ const GeneralManualRegister: React.FC = () => (
         <p className="mt-3 text-sm font-medium text-slate-500">
           名前が多いときは、画面の上の検索（虫眼鏡の欄）に自分の名前を入れると探しやすいです。
         </p>
-        <div className="mt-6">
+        <div className="mt-6 min-w-0 max-w-full">
           <MainListScreenMock highlightUser searchQuery="山田" highlightSearch />
         </div>
       </StepCard>

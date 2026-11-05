@@ -58,7 +58,7 @@ const GeneralManualList: React.FC = () => (
             矢印が押せないときは、期間の端まで来ています。
           </WarnBox>
         </div>
-        <div className="mt-6">
+        <div className="mt-6 min-w-0 max-w-full">
           <MainListScreenMock highlightMonth />
         </div>
       </StepCard>
@@ -134,7 +134,7 @@ const GeneralManualList: React.FC = () => (
           </a>
           へ。
         </p>
-        <div className="mt-6">
+        <div className="mt-6 min-w-0 max-w-full">
           <MainListScreenMock searchQuery="山田" highlightSearch highlightUser />
         </div>
       </StepCard>

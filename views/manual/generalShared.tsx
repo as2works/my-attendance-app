@@ -39,7 +39,7 @@ export const StepCard: React.FC<{ children: React.ReactNode; emphasize?: boolean
   emphasize,
 }) => (
   <section
-    className={`relative overflow-hidden rounded-[1.75rem] p-5 sm:p-8 ${
+    className={`relative min-w-0 max-w-full rounded-[1.75rem] p-4 sm:p-8 ${
       emphasize
         ? 'border border-teal-200/80 bg-white/95 shadow-[0_20px_50px_-28px_rgba(13,148,136,0.45)]'
         : 'border border-slate-200/80 bg-white/90 shadow-[0_16px_40px_-28px_rgba(15,23,42,0.35)]'
@@ -48,7 +48,7 @@ export const StepCard: React.FC<{ children: React.ReactNode; emphasize?: boolean
     {emphasize && (
       <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-teal-400/20 blur-2xl" />
     )}
-    {children}
+    <div className="relative min-w-0 max-w-full break-words [overflow-wrap:anywhere]">{children}</div>
   </section>
 );
 
@@ -56,14 +56,16 @@ export const TipCard: React.FC<{ title: string; children: React.ReactNode }> = (
   title,
   children,
 }) => (
-  <div className="rounded-[1.5rem] border border-slate-200/80 bg-white/90 p-5 shadow-sm">
+  <div className="min-w-0 max-w-full rounded-[1.5rem] border border-slate-200/80 bg-white/90 p-4 shadow-sm sm:p-5">
     <h3 className="font-display text-sm font-extrabold text-slate-900">{title}</h3>
-    <div className="mt-2 text-sm font-medium leading-relaxed text-slate-600">{children}</div>
+    <div className="mt-2 break-words text-sm font-medium leading-relaxed text-slate-600 [overflow-wrap:anywhere]">
+      {children}
+    </div>
   </div>
 );
 
 export const WarnBox: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold leading-relaxed text-amber-950">
+  <div className="min-w-0 max-w-full break-words rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm font-bold leading-relaxed text-amber-950 [overflow-wrap:anywhere] sm:px-4">
     {children}
   </div>
 );
@@ -150,7 +152,9 @@ export const ManualShell: React.FC<ManualShellProps> = ({
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-4 pb-16 pt-8 sm:px-6 sm:pt-12">{children}</main>
+      <main className="mx-auto w-full min-w-0 max-w-5xl px-4 pb-16 pt-8 sm:px-6 sm:pt-12">
+        <div className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]">{children}</div>
+      </main>
 
       {!isIndex && (
         <nav className="border-t border-slate-200/80 bg-white/70 backdrop-blur-sm">
@@ -212,16 +216,16 @@ export function PageHero(props: {
   lead: React.ReactNode;
 }) {
   return (
-    <section className="mb-8 sm:mb-10">
+    <section className="mb-8 min-w-0 max-w-full sm:mb-10">
       {props.badge && (
-        <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-teal-200/80 bg-teal-50 px-3 py-1 text-xs font-bold text-teal-800">
+        <p className="mb-3 inline-flex max-w-full items-center gap-2 break-words rounded-full border border-teal-200/80 bg-teal-50 px-3 py-1 text-xs font-bold text-teal-800">
           {props.badge}
         </p>
       )}
-      <h1 className="font-display text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl sm:leading-[1.25]">
+      <h1 className="break-words font-display text-3xl font-extrabold tracking-tight text-slate-900 [overflow-wrap:anywhere] sm:text-4xl sm:leading-[1.25]">
         {props.title}
       </h1>
-      <div className="mt-4 max-w-2xl text-base font-medium leading-relaxed text-slate-600 sm:text-lg">
+      <div className="mt-4 max-w-2xl break-words text-base font-medium leading-relaxed text-slate-600 [overflow-wrap:anywhere] sm:text-lg">
         {props.lead}
       </div>
     </section>
@@ -244,11 +248,11 @@ export function SummaryList(props: {
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-teal-600 text-sm font-extrabold text-white">
               {item.n}
             </span>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">
               <p className="font-display text-sm font-extrabold text-slate-900 sm:text-base">
                 {item.title}
               </p>
-              <p className="mt-0.5 text-sm font-medium text-slate-600">{item.desc}</p>
+              <p className="mt-0.5 text-sm font-medium leading-relaxed text-slate-600">{item.desc}</p>
             </div>
           </li>
         ))}
@@ -259,11 +263,13 @@ export function SummaryList(props: {
 
 export function DarkRecap(props: { label?: string; children: React.ReactNode }) {
   return (
-    <aside className="mt-12 rounded-2xl bg-slate-900 px-5 py-6 text-slate-100 sm:px-8">
+    <aside className="mt-12 min-w-0 max-w-full rounded-2xl bg-slate-900 px-4 py-6 text-slate-100 sm:px-8">
       <p className="text-xs font-bold tracking-wide text-teal-300">
         {props.label || 'もう一度だけ確認'}
       </p>
-      <div className="mt-3 space-y-2 text-base font-bold">{props.children}</div>
+      <div className="mt-3 space-y-2 break-words text-base font-bold [overflow-wrap:anywhere]">
+        {props.children}
+      </div>
     </aside>
   );
 }

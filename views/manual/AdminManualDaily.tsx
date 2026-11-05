@@ -110,46 +110,46 @@ export const AdminManualOverview: React.FC = () => (
 const AdminHistoryScreenMock: React.FC<{
   highlight?: 'badge' | 'checkbox';
 }> = ({ highlight = 'badge' }) => (
-  <div className="relative w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-[0_20px_50px_-24px_rgba(15,23,42,0.4)]">
+  <div className="relative w-full min-w-0 max-w-full rounded-2xl border border-slate-200 bg-slate-50 shadow-[0_20px_50px_-24px_rgba(15,23,42,0.4)]">
     {/* 実アプリのヘッダー */}
     <div className="flex items-center justify-between gap-2 bg-indigo-600 px-3 py-2.5 text-white sm:px-4">
       <div className="flex min-w-0 items-center gap-2">
-        <i className="fas fa-calendar-check text-sm" />
+        <i className="fas fa-calendar-check shrink-0 text-sm" />
         <span className="truncate text-xs font-bold sm:text-sm">管理者パネル・サンプル箱（寮）</span>
       </div>
       <div className="flex shrink-0 items-center gap-2 text-[10px] font-medium sm:text-xs">
         <span className="hidden sm:inline">使い方</span>
-        <span>一般画面へ</span>
+        <span className="hidden sm:inline">一般画面へ</span>
         <span className="rounded-lg bg-indigo-700 px-2 py-1">
           <i className="fas fa-sign-out-alt" />
         </span>
       </div>
     </div>
 
-    <div className="p-3 sm:p-4">
+    <div className="min-w-0 p-3 sm:p-4">
       {/* グループ＋未消込バッジ（実クラスに近い） */}
       <div className="relative mb-3 flex flex-wrap items-center gap-2">
         <span className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 shadow-sm">
           寮 ▾
         </span>
         <span
-          className={`inline-flex items-center rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-black whitespace-nowrap text-rose-600 ${
-            highlight === 'badge' ? 'ring-2 ring-teal-400 ring-offset-2' : ''
+          className={`inline-flex items-center rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-black text-rose-600 ${
+            highlight === 'badge' ? 'ring-2 ring-teal-400' : ''
           }`}
         >
           未消込 3
         </span>
-        <span className="inline-flex items-center rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-black whitespace-nowrap text-amber-700">
+        <span className="inline-flex max-w-full break-words rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-black leading-snug text-amber-700">
           他グループにも未消込 1
         </span>
         {highlight === 'badge' && (
-          <span className="absolute -top-8 left-16 rounded-xl bg-teal-600 px-2.5 py-1.5 text-[11px] font-bold leading-snug text-white shadow-lg sm:left-28">
+          <span className="w-full rounded-xl bg-teal-600 px-2.5 py-1.5 text-center text-[11px] font-bold leading-snug text-white shadow-lg sm:absolute sm:-top-8 sm:left-28 sm:w-auto sm:text-left">
             ここの数字を見る
-            <span className="absolute left-6 top-full h-0 w-0 border-x-[6px] border-t-[8px] border-x-transparent border-t-teal-600" />
+            <span className="absolute left-1/2 top-full hidden h-0 w-0 -translate-x-1/2 border-x-[6px] border-t-[8px] border-x-transparent border-t-teal-600 sm:left-6 sm:block sm:translate-x-0" />
           </span>
         )}
       </div>
-      <p className="mb-3 text-[10px] font-medium text-slate-500 sm:text-xs">
+      <p className="mb-3 break-words text-[10px] font-medium leading-relaxed text-slate-500 sm:text-xs">
         表示・追加・履歴は、いま選んでいる「寮」だけが対象です。
       </p>
 
@@ -240,7 +240,7 @@ const AdminHistoryScreenMock: React.FC<{
                   <div className="flex shrink-0 flex-col items-center gap-1.5 pt-1">
                     <span
                       className={`flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white shadow-sm ${
-                        highlight === 'checkbox' ? 'ring-2 ring-teal-500 ring-offset-1' : ''
+                        highlight === 'checkbox' ? 'ring-2 ring-teal-500' : ''
                       }`}
                     />
                     <span className="text-[9px] font-black uppercase tracking-wider text-rose-400">
@@ -445,12 +445,12 @@ export const AdminManualCsv: React.FC = () => (
           <br />
           予定が空の日は、マスが空欄になります。
         </p>
-        <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-100 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-500">
+        <div className="mt-6 min-w-0 max-w-full rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="break-words border-b border-slate-100 bg-slate-50 px-3 py-2 text-xs font-bold leading-relaxed text-slate-500">
             出勤確認表_20261201_1530.csv（中身の例）
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[420px] border-collapse text-left text-[11px]">
+          <div className="min-w-0 overflow-x-auto overscroll-x-contain">
+            <table className="w-full min-w-[320px] border-collapse text-left text-[11px] sm:min-w-[420px]">
               <thead>
                 <tr className="border-b border-slate-100 bg-white font-bold text-slate-500">
                   {['ID', '氏名', 'グループ', '2026-12-01', '2026-12-02', '2026-12-03'].map((h) => (
