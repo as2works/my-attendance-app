@@ -1,6 +1,6 @@
 import React from 'react';
 import { ADMIN_MANUAL_PAGES, GENERAL_MANUAL_PATH } from '../../services/manualPath';
-import { AdminManualShell, PageHero } from './generalShared';
+import { AdminManualShell, PageHero, WarnBox } from './generalShared';
 
 const AdminManualIndex: React.FC = () => {
   const pages = ADMIN_MANUAL_PAGES.filter((p) => p.inToc);
@@ -21,12 +21,27 @@ const AdminManualIndex: React.FC = () => {
         }
         lead={
           <>
-            毎日使う確認から先に書いてあります。
+            渡された管理者用URLで開くパネルの使い方です。確認・消込・名簿・期間・入場URLなど、パネル内の操作をまとめます。
             <br />
-            シーズン始めの準備は、そのあとの「準備の流れ」からどうぞ。
+            初めてなら「画面の全体像」から、毎日の運用なら「確認と消込」からどうぞ。
           </>
         }
       />
+
+      <div className="mb-8">
+        <WarnBox>
+          このガイドはログイン不要で開けます。操作は実データに影響するので、本番で試すときは内容を読んでからにしてください。
+          <br />
+          管理者パネルは、渡された管理者用URLから開きます。入力する人向けの説明は
+          <a
+            href={GENERAL_MANUAL_PATH}
+            className="mx-1 font-bold text-teal-800 underline"
+          >
+            みなさん向けガイド
+          </a>
+          にあります。
+        </WarnBox>
+      </div>
 
       <section id="toc" className="space-y-8">
         {sections.map((section) => (
@@ -76,17 +91,6 @@ const AdminManualIndex: React.FC = () => {
           </div>
         ))}
       </section>
-
-      <p className="mt-10 text-center text-sm font-medium text-slate-500">
-        入力する人向けの説明は
-        <a
-          href={GENERAL_MANUAL_PATH}
-          className="mx-1 font-bold text-teal-700 underline decoration-teal-300 underline-offset-2"
-        >
-          みなさん向けガイド
-        </a>
-        にあります。
-      </p>
     </AdminManualShell>
   );
 };

@@ -186,7 +186,7 @@ const AccessLinksPanel: React.FC<AccessLinksPanelProps> = ({ currentLinkId, grou
 
       <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl text-sm text-amber-900 font-medium leading-relaxed space-y-3">
         <p>
-          再発行には、箱作成時に表示された専用パスワードが必要です（普段の入場とは別です）。
+          再発行には、最初に渡された専用パスワードが必要です（普段の入場とは別です）。
         </p>
         <button
           type="button"

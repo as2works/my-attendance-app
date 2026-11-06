@@ -273,3 +273,100 @@ export function DarkRecap(props: { label?: string; children: React.ReactNode }) 
     </aside>
   );
 }
+
+/** 管理者ガイド: このページでできること（件数は可変） */
+export function DocGoals(props: { label?: string; items: string[] }) {
+  return (
+    <section className="mb-10 rounded-[1.75rem] border border-slate-200/80 bg-white/90 p-5 shadow-sm sm:mb-12 sm:p-6">
+      <p className="mb-3 text-xs font-bold text-slate-500">
+        {props.label || 'このページでできること'}
+      </p>
+      <ul className="space-y-2.5">
+        {props.items.map((item) => (
+          <li key={item} className="flex gap-2.5 text-sm font-medium leading-relaxed text-slate-700">
+            <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-teal-600" />
+            <span className="min-w-0 break-words [overflow-wrap:anywhere]">{item}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** 管理者ガイド: 番号付き手順（3固定ではない） */
+export function ProcedureSteps(props: {
+  label?: string;
+  steps: Array<{ title: string; body?: React.ReactNode }>;
+}) {
+  return (
+    <section className="mb-8 rounded-[1.75rem] border border-slate-200/80 bg-slate-50/80 p-5 sm:p-6">
+      {props.label && <p className="mb-3 text-xs font-bold text-slate-500">{props.label}</p>}
+      <ol className="space-y-4">
+        {props.steps.map((step, i) => (
+          <li key={step.title} className="flex gap-3">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-sm font-extrabold text-white">
+              {i + 1}
+            </span>
+            <div className="min-w-0 flex-1 pt-0.5">
+              <p className="font-display text-sm font-extrabold text-slate-900 sm:text-base">
+                {step.title}
+              </p>
+              {step.body && (
+                <div className="mt-1 break-words text-sm font-medium leading-relaxed text-slate-600 [overflow-wrap:anywhere]">
+                  {step.body}
+                </div>
+              )}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+/** 管理者ガイド: 確認チェックリスト */
+export function CheckList(props: { label?: string; items: string[] }) {
+  return (
+    <aside className="mt-12 min-w-0 max-w-full rounded-2xl bg-slate-900 px-4 py-6 text-slate-100 sm:px-8">
+      <p className="text-xs font-bold tracking-wide text-teal-300">
+        {props.label || '確認チェックリスト'}
+      </p>
+      <ul className="mt-4 space-y-3">
+        {props.items.map((item) => (
+          <li key={item} className="flex gap-3 text-sm font-bold leading-relaxed sm:text-base">
+            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border border-teal-400/60 text-[10px] text-teal-300">
+              <i className="fas fa-check" />
+            </span>
+            <span className="min-w-0 break-words [overflow-wrap:anywhere]">{item}</span>
+          </li>
+        ))}
+      </ul>
+    </aside>
+  );
+}
+
+/** 関連ページへのリンク行 */
+export function RelatedLinks(props: {
+  items: Array<{ href: string; label: string; note?: string }>;
+}) {
+  return (
+    <div className="mt-8 rounded-2xl border border-slate-200 bg-white/90 p-4 sm:p-5">
+      <p className="text-xs font-bold text-slate-500">関連ページ</p>
+      <ul className="mt-3 space-y-2">
+        {props.items.map((item) => (
+          <li key={item.href}>
+            <a
+              href={item.href}
+              className="font-bold text-teal-700 underline decoration-teal-300 underline-offset-2"
+            >
+              {item.label}
+            </a>
+            {item.note && (
+              <span className="ml-2 text-sm font-medium text-slate-500">— {item.note}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

@@ -1,4 +1,4 @@
-/** マニュアル（ログイン不要・全箱共通） */
+/** マニュアル（ログイン不要・入場URLなしで開ける） */
 
 export const GENERAL_MANUAL_PATH = '/manual/general';
 export const ADMIN_MANUAL_PATH = '/manual/admin';
@@ -70,8 +70,9 @@ export const GENERAL_MANUAL_PAGES: ManualNavPage[] = [
 
 export type AdminManualSlug =
   | 'index'
-  | 'overview'
-  | 'history'
+  | 'tour'
+  | 'daily'
+  | 'edit'
   | 'csv'
   | 'setup'
   | 'season'
@@ -79,6 +80,12 @@ export type AdminManualSlug =
   | 'users'
   | 'links'
   | 'faq';
+
+/** 旧URL → 新slug（ブックマーク互換） */
+export const ADMIN_MANUAL_LEGACY_REDIRECTS: Record<string, AdminManualSlug> = {
+  overview: 'daily',
+  history: 'daily',
+};
 
 export const ADMIN_MANUAL_PAGES: ManualNavPage[] = [
   {
@@ -90,39 +97,49 @@ export const ADMIN_MANUAL_PAGES: ManualNavPage[] = [
     inToc: false,
   },
   {
-    slug: 'overview',
-    path: `${ADMIN_MANUAL_PATH}/overview`,
-    title: '予定一覧で確認する',
-    short: '一覧の確認',
-    desc: 'グループ切替・月送り・未入力の見つけ方',
+    slug: 'tour',
+    path: `${ADMIN_MANUAL_PATH}/tour`,
+    title: '画面の全体像',
+    short: '画面の全体像',
+    desc: '左メニュー・グループ切替・未消込バッジ・ヘッダー。何が「いまのグループだけ」か',
     inToc: true,
-    section: '毎日・よく使う',
+    section: 'はじめて読む',
     emphasize: true,
   },
   {
-    slug: 'history',
-    path: `${ADMIN_MANUAL_PATH}/history`,
-    title: '連絡・履歴を処理する',
-    short: '履歴の消込',
-    desc: '下の履歴パネルと未消込の消し方',
+    slug: 'daily',
+    path: `${ADMIN_MANUAL_PATH}/daily`,
+    title: '毎日の確認と消込',
+    short: '確認と消込',
+    desc: '予定一覧の見方、履歴の確認、未消込の消し方',
     inToc: true,
-    section: '毎日・よく使う',
+    section: '毎日の作業',
+    emphasize: true,
+  },
+  {
+    slug: 'edit',
+    path: `${ADMIN_MANUAL_PATH}/edit`,
+    title: '一般画面で予定を直す',
+    short: '一般画面で直す',
+    desc: '「一般画面へ」の往復、備考と登録の違い、シーズン外の注意',
+    inToc: true,
+    section: '毎日の作業',
   },
   {
     slug: 'csv',
     path: `${ADMIN_MANUAL_PATH}/csv`,
     title: '出勤CSVを出す',
     short: 'CSV出力',
-    desc: '左メニューから全グループ分をダウンロード',
+    desc: '全グループ・期間分の出勤確認表。列の意味と出せないときの確認',
     inToc: true,
-    section: '毎日・よく使う',
+    section: '毎日の作業',
   },
   {
     slug: 'setup',
     path: `${ADMIN_MANUAL_PATH}/setup`,
     title: 'シーズン準備の流れ',
     short: '準備の流れ',
-    desc: '期間→グループ→利用者→URL配布の順番',
+    desc: '期間 → グループ → 利用者 → URL配布 → 入力依頼の順番',
     inToc: true,
     section: 'シーズンの準備',
     emphasize: true,
@@ -130,9 +147,9 @@ export const ADMIN_MANUAL_PAGES: ManualNavPage[] = [
   {
     slug: 'season',
     path: `${ADMIN_MANUAL_PATH}/season`,
-    title: '期間・休日を設定する',
+    title: '期間・休日・表示設定',
     short: '期間・休日',
-    desc: '入力できる期間と休日の色付け',
+    desc: '入力できる期間、休日の赤表示、ユーザIDの表示／非表示',
     inToc: true,
     section: 'シーズンの準備',
   },
@@ -141,7 +158,7 @@ export const ADMIN_MANUAL_PAGES: ManualNavPage[] = [
     path: `${ADMIN_MANUAL_PATH}/groups`,
     title: 'グループを整える',
     short: 'グループ',
-    desc: 'グループの追加と、寮の in / out 記号',
+    desc: '追加・寮記号・並べ替え・削除（URL無効化と利用者の移動）',
     inToc: true,
     section: 'シーズンの準備',
   },
@@ -150,16 +167,16 @@ export const ADMIN_MANUAL_PAGES: ManualNavPage[] = [
     path: `${ADMIN_MANUAL_PATH}/users`,
     title: '利用者を登録する',
     short: '利用者',
-    desc: '手入力とCSV取込、移動・削除',
+    desc: '手入力、並べ替え、移動・削除、CSV取込ウィザード',
     inToc: true,
     section: 'シーズンの準備',
   },
   {
     slug: 'links',
     path: `${ADMIN_MANUAL_PATH}/links`,
-    title: '入場URLを配る',
+    title: '入場URLと再発行',
     short: '入場URL',
-    desc: '管理者用・一般用のコピーと再発行',
+    desc: '管理者用・一般用のコピー、配り方、再発行とパスワード',
     inToc: true,
     section: 'シーズンの準備',
   },
@@ -168,7 +185,7 @@ export const ADMIN_MANUAL_PAGES: ManualNavPage[] = [
     path: `${ADMIN_MANUAL_PATH}/faq`,
     title: '困ったとき',
     short: '困ったとき',
-    desc: '期間変更後の表示、読み込みの速さ、よくある質問',
+    desc: '症状別の確認手順（期間・速さ・URL・消込など）',
     inToc: true,
     section: '困ったとき',
   },
@@ -202,6 +219,11 @@ export function getGeneralManualSlug(pathname = window.location.pathname): Gener
 }
 
 export function getAdminManualSlug(pathname = window.location.pathname): AdminManualSlug {
+  const p = pathname.replace(/\/+$/, '') || '/';
+  if (p === ADMIN_MANUAL_PATH) return 'index';
+  const rest = p.slice(ADMIN_MANUAL_PATH.length + 1);
+  const raw = rest.split('/')[0] || '';
+  if (ADMIN_MANUAL_LEGACY_REDIRECTS[raw]) return ADMIN_MANUAL_LEGACY_REDIRECTS[raw];
   return getSlugFromPages(ADMIN_MANUAL_PAGES, ADMIN_MANUAL_PATH, pathname) as AdminManualSlug;
 }
 

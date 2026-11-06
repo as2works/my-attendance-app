@@ -15,12 +15,16 @@ export const AdminAppShellMock: React.FC<{
   activeNav?: 'overview' | 'users' | 'groups' | 'config' | 'links' | 'csv';
   highlightCsv?: boolean;
   highlightBadge?: boolean;
+  highlightHeader?: 'manual' | 'general' | null;
+  highlightGroup?: boolean;
   caption?: string;
 }> = ({
   children,
   activeNav = 'overview',
   highlightCsv = false,
   highlightBadge = false,
+  highlightHeader = null,
+  highlightGroup = false,
   caption = '※ 説明用の画面イメージです（実画面と同じ部品配置）',
 }) => {
   const nav = [
@@ -36,11 +40,23 @@ export const AdminAppShellMock: React.FC<{
       <div className="flex items-center justify-between gap-2 bg-indigo-600 px-3 py-2.5 text-white sm:px-4">
         <div className="flex min-w-0 items-center gap-2">
           <i className="fas fa-calendar-check shrink-0 text-sm" />
-          <span className="truncate text-xs font-bold sm:text-sm">管理者パネル・サンプル箱（寮）</span>
+          <span className="truncate text-xs font-bold sm:text-sm">管理者パネル（寮）</span>
         </div>
         <div className="flex shrink-0 items-center gap-1.5 text-[10px] font-medium sm:gap-2 sm:text-xs">
-          <span className="hidden sm:inline">使い方</span>
-          <span className="hidden sm:inline">一般画面へ</span>
+          <span
+            className={`hidden sm:inline ${
+              highlightHeader === 'manual' ? 'rounded bg-teal-400 px-1.5 py-0.5 font-black text-slate-900' : ''
+            }`}
+          >
+            使い方
+          </span>
+          <span
+            className={`hidden sm:inline ${
+              highlightHeader === 'general' ? 'rounded bg-teal-400 px-1.5 py-0.5 font-black text-slate-900' : ''
+            }`}
+          >
+            一般画面へ
+          </span>
           <span className="rounded-lg bg-indigo-700 px-2 py-1">
             <i className="fas fa-sign-out-alt" />
           </span>
@@ -49,7 +65,11 @@ export const AdminAppShellMock: React.FC<{
 
       <div className="min-w-0 p-3 sm:p-4">
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <span className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 shadow-sm">
+          <span
+            className={`rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 shadow-sm ${
+              highlightGroup ? 'ring-2 ring-teal-400' : ''
+            }`}
+          >
             寮 ▾
           </span>
           <span
@@ -323,7 +343,7 @@ export const AdminLinksScreenMock: React.FC<{ highlightGeneral?: boolean }> = ({
       </div>
 
       <div className="rounded-2xl border border-amber-100 bg-amber-50 p-3 text-xs font-medium leading-relaxed text-amber-900">
-        再発行には、箱作成時に表示された専用パスワードが必要です（普段の入場とは別です）。
+        再発行には、最初に渡された専用パスワードが必要です（普段の入場とは別です）。
       </div>
     </div>
   </AdminAppShellMock>
@@ -559,4 +579,180 @@ export const AdminUsersScreenMock: React.FC<{ highlightCsv?: boolean }> = ({
       </div>
     </div>
   </AdminAppShellMock>
+);
+
+/** 確認・消込の下段：履歴・消込（実画面に近い） */
+export const AdminHistoryScreenMock: React.FC<{
+  highlight?: 'badge' | 'checkbox';
+}> = ({ highlight = 'badge' }) => (
+  <div className="relative w-full min-w-0 max-w-full rounded-2xl border border-slate-200 bg-slate-50 shadow-[0_20px_50px_-24px_rgba(15,23,42,0.4)]">
+    <div className="flex items-center justify-between gap-2 bg-indigo-600 px-3 py-2.5 text-white sm:px-4">
+      <div className="flex min-w-0 items-center gap-2">
+        <i className="fas fa-calendar-check shrink-0 text-sm" />
+        <span className="truncate text-xs font-bold sm:text-sm">管理者パネル（寮）</span>
+      </div>
+      <div className="flex shrink-0 items-center gap-2 text-[10px] font-medium sm:text-xs">
+        <span className="hidden sm:inline">使い方</span>
+        <span className="hidden sm:inline">一般画面へ</span>
+        <span className="rounded-lg bg-indigo-700 px-2 py-1">
+          <i className="fas fa-sign-out-alt" />
+        </span>
+      </div>
+    </div>
+
+    <div className="min-w-0 p-3 sm:p-4">
+      <div className="relative mb-3 flex flex-wrap items-center gap-2">
+        <span className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 shadow-sm">
+          寮 ▾
+        </span>
+        <span
+          className={`inline-flex items-center rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-black text-rose-600 ${
+            highlight === 'badge' ? 'ring-2 ring-teal-400' : ''
+          }`}
+        >
+          未消込 3
+        </span>
+        <span className="inline-flex max-w-full break-words rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-black leading-snug text-amber-700">
+          他グループにも未消込 1
+        </span>
+        {highlight === 'badge' && (
+          <span className="w-full rounded-xl bg-teal-600 px-2.5 py-1.5 text-center text-[11px] font-bold leading-snug text-white shadow-lg sm:absolute sm:-top-8 sm:left-28 sm:w-auto sm:text-left">
+            ここの数字を見る
+            <span className="absolute left-1/2 top-full hidden h-0 w-0 -translate-x-1/2 border-x-[6px] border-t-[8px] border-x-transparent border-t-teal-600 sm:left-6 sm:block sm:translate-x-0" />
+          </span>
+        )}
+      </div>
+      <p className="mb-3 break-words text-[10px] font-medium leading-relaxed text-slate-500 sm:text-xs">
+        表示・追加・履歴は、いま選んでいる「寮」だけが対象です。
+      </p>
+
+      <div className="flex flex-col gap-3 lg:flex-row">
+        <div className="hidden w-36 shrink-0 flex-col gap-2 sm:flex">
+          <div className="flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2.5 text-xs font-bold text-white shadow-lg shadow-indigo-100">
+            <i className="fas fa-th-list" />
+            確認・消込
+          </div>
+          {[
+            { i: 'fa-users-cog', t: '利用者管理' },
+            { i: 'fa-layer-group', t: 'グループ' },
+            { i: 'fa-cog', t: '期間・休日' },
+            { i: 'fa-link', t: '入場URL' },
+          ].map((x) => (
+            <div
+              key={x.t}
+              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-500"
+            >
+              <i className={`fas ${x.i}`} />
+              {x.t}
+            </div>
+          ))}
+          <div className="mt-auto flex items-center gap-2 rounded-xl bg-slate-800 px-3 py-2.5 text-xs font-bold text-white shadow-md">
+            <i className="fas fa-file-csv" />
+            CSV出力
+          </div>
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="mb-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 bg-slate-50/50 px-3 py-2 text-[11px] font-bold text-slate-600">
+              寮・出勤予定一覧
+            </div>
+            <div className="px-3 py-4 text-center text-[10px] font-bold text-slate-300">
+              （予定の表がここにあります）
+            </div>
+          </div>
+          <div className="mb-2 flex justify-center">
+            <div className="h-1.5 w-14 rounded-full bg-slate-300" />
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/50 px-3 py-3 sm:px-4">
+              <h3 className="flex min-w-0 items-center gap-2 text-sm font-black text-slate-800">
+                <i className="fas fa-history shrink-0 text-indigo-500" />
+                <span className="truncate">寮・変更履歴・消込</span>
+              </h3>
+              <label className="flex shrink-0 items-center gap-1.5 text-[10px] font-bold text-slate-500">
+                <span className="flex h-3 w-3 items-center justify-center rounded border border-slate-300 bg-white" />
+                完了分も表示
+              </label>
+            </div>
+            <div className="space-y-3 bg-slate-50/10 p-3 sm:p-4">
+              <div
+                className={`relative rounded-xl border border-indigo-100 bg-white p-3 shadow-sm ring-1 ring-indigo-50 sm:p-4 ${
+                  highlight === 'checkbox' ? 'ring-2 ring-teal-400' : ''
+                }`}
+              >
+                {highlight === 'checkbox' && (
+                  <span className="absolute -top-9 right-2 z-10 rounded-xl bg-teal-600 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-lg">
+                    右の□で消込
+                    <span className="absolute right-6 top-full h-0 w-0 border-x-[6px] border-t-[8px] border-x-transparent border-t-teal-600" />
+                  </span>
+                )}
+                <div className="flex items-start justify-between gap-3 sm:gap-4">
+                  <div className="min-w-0 flex-grow">
+                    <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-widest text-indigo-600">
+                        Update
+                      </span>
+                      <span className="text-sm font-black text-slate-800 underline decoration-slate-200 underline-offset-2">
+                        山田 太郎
+                      </span>
+                      <span className="text-[10px] font-medium text-slate-400">
+                        <i className="far fa-clock mr-1" />
+                        12月5日 14:20
+                      </span>
+                    </div>
+                    <p className="whitespace-pre-wrap rounded-lg border border-slate-100 bg-slate-50 p-3 text-xs font-medium leading-relaxed text-slate-600">
+                      山田 太郎: 12/5 を「-」→「〇」に変更
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-center gap-1.5 pt-1">
+                    <span
+                      className={`flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white shadow-sm ${
+                        highlight === 'checkbox' ? 'ring-2 ring-teal-500' : ''
+                      }`}
+                    />
+                    <span className="text-[9px] font-black uppercase tracking-wider text-rose-400">
+                      未消込
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-100 bg-white p-3 opacity-50 shadow-sm grayscale-[0.5] sm:p-4">
+                <div className="flex items-start justify-between gap-3 sm:gap-4">
+                  <div className="min-w-0 flex-grow">
+                    <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-widest text-indigo-600">
+                        Update
+                      </span>
+                      <span className="text-sm font-black text-slate-800 underline decoration-slate-200 underline-offset-2">
+                        佐藤 花子
+                      </span>
+                      <span className="text-[10px] font-medium text-slate-400">
+                        <i className="far fa-clock mr-1" />
+                        12月4日 09:05
+                      </span>
+                    </div>
+                    <p className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-xs font-medium leading-relaxed text-slate-600">
+                      佐藤 花子: 備考を更新
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-center gap-1.5 pt-1">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-indigo-500 bg-indigo-600 text-white shadow-sm">
+                      <i className="fas fa-check text-xs" />
+                    </span>
+                    <span className="text-[9px] font-black uppercase tracking-wider text-emerald-500">
+                      完了
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p className="border-t border-slate-100 bg-white px-3 py-2 text-center text-[11px] font-bold text-slate-400">
+      ※ 説明用の画面イメージです（実画面と同じ部品配置）
+    </p>
+  </div>
 );
