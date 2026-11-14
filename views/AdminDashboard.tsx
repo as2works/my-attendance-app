@@ -8,7 +8,21 @@ import UserNoteButton, { hasUserNote } from '../components/UserNoteButton';
 import UserNoteModal from '../components/UserNoteModal';
 import UsersCsvImportModal from '../components/UsersCsvImportModal';
 import { db } from '../services/database';
-import { User, History, SystemConfig, Schedule, AttendanceStatus, Group, GroupId, groupLabel, userMatchesQuery, normalizeEmployeeId } from '../types';
+import {
+  User,
+  History,
+  SystemConfig,
+  Schedule,
+  AttendanceStatus,
+  Group,
+  GroupId,
+  AdminGroupSelection,
+  groupLabel,
+  adminGroupSelectionLabel,
+  isAllGroupsSelection,
+  userMatchesQuery,
+  normalizeEmployeeId,
+} from '../types';
 import { STATUS_COLORS } from '../constants';
 import {
   toDateKey,
@@ -51,8 +65,8 @@ interface AdminDashboardProps {
   onNavigateGeneral: () => void;
   groups: Group[];
   onGroupsChange: (groups?: Group[]) => void | Promise<void>;
-  groupId: GroupId;
-  onGroupChange: (groupId: GroupId) => void;
+  groupId: AdminGroupSelection;
+  onGroupChange: (groupId: AdminGroupSelection) => void;
   currentLinkId: string;
   workspaceName?: string;
   /** bootstrapAdmin からの初回 OVERVIEW データ */
@@ -102,7 +116,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   );
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmployeeId, setNewUserEmployeeId] = useState('');
-  const [newUserGroupId, setNewUserGroupId] = useState(groupId);
+  const [newUserGroupId, setNewUserGroupId] = useState<GroupId>(() =>
+    isAllGroupsSelection(groupId) ? groups[0]?.id || '' : groupId
+  );
   const [showProcessedHistory, setShowProcessedHistory] = useState(false);
   const [isUpdating, setIsUpdating] = useState(!hasBootData);
   const [currentMonth, setCurrentMonth] = useState(() =>
@@ -152,8 +168,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [linksEverOpened, setLinksEverOpened] = useState(false);
   const [csvImportOpen, setCsvImportOpen] = useState(false);
 
-  const currentGroupName = groupLabel(groups, groupId);
-  const otherGroups = groups.filter((g) => g.id !== groupId);
+  const isAllMode = isAllGroupsSelection(groupId);
+  const currentGroupName = adminGroupSelectionLabel(groups, groupId);
+  const otherGroups = isAllMode ? groups : groups.filter((g) => g.id !== groupId);
   const holidays = config?.holidays || [];
   const showEmployeeId = config?.showEmployeeId !== false;
   const normalizedQuery = nameQuery.trim().toLocaleLowerCase('ja');
@@ -210,12 +227,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }, [histories, showProcessedHistory, normalizedQuery, matchingUserIds]);
 
   useEffect(() => {
-    setNewUserGroupId(groupId);
+    if (!isAllGroupsSelection(groupId)) {
+      setNewUserGroupId(groupId);
+    } else if (groups[0]) {
+      setNewUserGroupId(groups[0].id);
+    }
     setNameQuery('');
     setNoteUser(null);
     setEditUserId(null);
     setMoveUserId(null);
   }, [groupId]);
+
+  useEffect(() => {
+    if (isAllGroupsSelection(groupId) && groups[0] && !groups.some((g) => g.id === newUserGroupId)) {
+      setNewUserGroupId(groups[0].id);
+    }
+  }, [groups, groupId, newUserGroupId]);
 
   const refreshUnprocessedCounts = async () => {
     try {
@@ -241,27 +268,36 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setIsUpdating(true);
     setLoadError(null);
     try {
+      const allGroups = isAllGroupsSelection(groupId);
       let groupUsers = usersRef.current;
       if (want.users) {
-        groupUsers = await db.getUsers(groupId);
+        groupUsers = await db.getUsers(allGroups ? undefined : groupId, {
+          allGroups,
+        });
         if (seq !== refreshSeqRef.current) return;
         setUsers(groupUsers);
       }
 
       const parallel: Promise<void>[] = [];
       if (want.histories) {
-        parallel.push(
-          db.getHistories(groupId, { includeProcessed: showProcessedHistory }).then((h) => {
-            if (seq !== refreshSeqRef.current) return;
-            setHistories(h);
-          })
-        );
+        if (allGroups) {
+          setHistories([]);
+        } else {
+          parallel.push(
+            db.getHistories(groupId, { includeProcessed: showProcessedHistory }).then((h) => {
+              if (seq !== refreshSeqRef.current) return;
+              setHistories(h);
+            })
+          );
+        }
       }
       if (want.schedules) {
         const ids = groupUsers.map((u) => u.id);
         parallel.push(
           (ids.length
-            ? db.getSchedulesForMonth(ids, year, month, groupId)
+            ? db.getSchedulesForMonth(ids, year, month, allGroups ? undefined : groupId, {
+                allGroups,
+              })
             : Promise.resolve([] as Schedule[])
           ).then((s) => {
             if (seq !== refreshSeqRef.current) return;
@@ -623,10 +659,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return schedules.find(s => s.userId === userId && s.date === dateStr)?.status || '-';
   };
 
-  const currentUnprocessed = unprocessedCounts[groupId] ?? 0;
-  const otherUnprocessedTotal = groups
-    .filter((g) => g.id !== groupId)
-    .reduce((sum, g) => sum + (unprocessedCounts[g.id] ?? 0), 0);
+  const allUnprocessedTotal = groups.reduce(
+    (sum, g) => sum + (unprocessedCounts[g.id] ?? 0),
+    0
+  );
+  const currentUnprocessed = isAllMode ? 0 : unprocessedCounts[groupId] ?? 0;
+  const otherUnprocessedTotal = isAllMode
+    ? allUnprocessedTotal
+    : groups
+        .filter((g) => g.id !== groupId)
+        .reduce((sum, g) => sum + (unprocessedCounts[g.id] ?? 0), 0);
 
   if (loadError && !config) {
     return (
@@ -681,21 +723,26 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             groups={groups}
             value={groupId}
             onChange={onGroupChange}
+            allowAll
             unprocessedCounts={unprocessedCounts}
           />
-          {currentUnprocessed > 0 && (
+          {!isAllMode && currentUnprocessed > 0 && (
             <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-rose-50 border border-rose-200 text-rose-600 text-xs font-black whitespace-nowrap">
               未消込 {currentUnprocessed}
             </span>
           )}
           {otherUnprocessedTotal > 0 && (
             <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs font-black whitespace-nowrap">
-              他グループにも未消込 {otherUnprocessedTotal}
+              {isAllMode
+                ? `未消込 合計 ${otherUnprocessedTotal}`
+                : `他グループにも未消込 ${otherUnprocessedTotal}`}
             </span>
           )}
         </div>
         <p className="text-xs text-slate-500 font-medium">
-          表示・追加・履歴は、いま選んでいる「{currentGroupName}」だけが対象です。
+          {isAllMode
+            ? '全員表示です。グループ名を押すとそのグループに切り替わり、履歴・消込が使えます。'
+            : `表示・追加・履歴は、いま選んでいる「${currentGroupName}」だけが対象です。`}
         </p>
       </div>
 
@@ -827,6 +874,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <th className="px-3 py-3 min-w-[140px] sticky left-0 top-0 bg-slate-50 z-40 border-r border-b border-slate-200">
                           {showEmployeeId ? 'ユーザID / 氏名' : '氏名'}
                         </th>
+                        {isAllMode && (
+                          <th className="px-2 py-3 min-w-[72px] sticky top-0 bg-slate-50 z-30 border-r border-b border-slate-200">
+                            グループ
+                          </th>
+                        )}
                         {daysArray.map(day => {
                           const dow = getDayOfWeek(day);
                           const tone = getDayTone(toDateKey(currentYear, currentMonth, day), holidays);
@@ -858,6 +910,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               />
                             </div>
                           </td>
+                          {isAllMode && (
+                            <td className="px-2 py-3 border-r border-slate-100 align-middle">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onGroupChange(user.groupId);
+                                }}
+                                className="max-w-[7rem] truncate text-left text-[11px] font-black text-indigo-700 underline decoration-indigo-200 underline-offset-2 hover:text-indigo-900"
+                                title={`${groupLabel(groups, user.groupId)}に切り替える`}
+                              >
+                                {groupLabel(groups, user.groupId)}
+                              </button>
+                            </td>
+                          )}
                           {daysArray.map(day => {
                             const status = getStatus(user.id, day);
                             const tone = getDayTone(toDateKey(currentYear, currentMonth, day), holidays);
@@ -921,18 +988,29 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <i className="fas fa-history text-indigo-500 shrink-0"></i>
                     <span className="truncate">{currentGroupName}・変更履歴・消込</span>
                   </h3>
-                  <label className="flex items-center space-x-2 text-[10px] text-slate-500 cursor-pointer hover:text-slate-700 transition shrink-0">
-                    <input
-                      type="checkbox"
-                      checked={showProcessedHistory}
-                      onChange={(e) => setShowProcessedHistory(e.target.checked)}
-                      className="w-3 h-3 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500"
-                    />
-                    <span className="font-bold">完了分も表示</span>
-                  </label>
+                  {!isAllMode && (
+                    <label className="flex items-center space-x-2 text-[10px] text-slate-500 cursor-pointer hover:text-slate-700 transition shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={showProcessedHistory}
+                        onChange={(e) => setShowProcessedHistory(e.target.checked)}
+                        className="w-3 h-3 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500"
+                      />
+                      <span className="font-bold">完了分も表示</span>
+                    </label>
+                  )}
                 </div>
 
                 <div className="flex-grow overflow-y-auto p-4 space-y-3 bg-slate-50/10">
+                  {isAllMode ? (
+                    <div className="rounded-xl border border-amber-100 bg-amber-50 p-4 text-sm font-medium leading-relaxed text-amber-900">
+                      全員表示では履歴・消込は使えません。
+                      <br />
+                      一覧の<strong className="font-black">グループ名</strong>
+                      を押すか、上の切替でグループを選んでください。
+                    </div>
+                  ) : (
+                    <>
                   {visibleHistories.map(h => (
                       <div key={h.id} className={`bg-white p-4 rounded-xl border transition shadow-sm hover:shadow-md ${h.isProcessed ? 'opacity-50 grayscale-[0.5] border-slate-100' : 'border-indigo-100 ring-1 ring-indigo-50'}`}>
                         <div className="flex items-start justify-between gap-4">
@@ -985,6 +1063,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </p>
                     </div>
                   )}
+                    </>
+                  )}
                 </div>
               </section>
               </div>
@@ -993,6 +1073,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           {activeTab === 'USERS' && (
             <div className="space-y-6 animate-in slide-in-from-right-4 duration-300 overflow-y-auto pr-2">
+              {isAllMode ? (
+                <div className="rounded-xl border border-amber-100 bg-amber-50 p-4 text-sm font-medium leading-relaxed text-amber-900">
+                  利用者の追加・並べ替え・移動・削除は、グループを選んでから行ってください。
+                  <br />
+                  「確認・消込」でグループ名を押すか、上の切替でグループを選んでください。
+                </div>
+              ) : (
+                <>
               <div className="flex justify-between items-center gap-4 flex-wrap">
                 <h3 className="text-xl font-black text-slate-800">{currentGroupName}の利用者名簿</h3>
                 <p className="text-xs text-slate-400 font-bold">
@@ -1132,6 +1220,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 )}
               </div>
+                </>
+              )}
             </div>
           )}
 
@@ -1264,7 +1354,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <UserNoteModal
           userId={noteUser.id}
           userName={noteUser.name}
-          groupId={groupId}
+          groupId={noteUser.groupId}
           initialNote={noteUser.note || ''}
           onClose={() => setNoteUser(null)}
           onSaved={(note) => {

@@ -1,12 +1,14 @@
 import React from 'react';
-import { Group, GroupId } from '../types';
+import { ALL_GROUPS_ID, AdminGroupSelection, Group } from '../types';
 
 interface GroupSelectorProps {
   groups: Group[];
-  value: GroupId;
-  onChange: (groupId: GroupId) => void;
+  value: AdminGroupSelection;
+  onChange: (groupId: AdminGroupSelection) => void;
   className?: string;
   label?: string;
+  /** 管理者向け「全員」選択肢 */
+  allowAll?: boolean;
   /** グループID → 未消込件数。0超のとき選択肢に件数を付与 */
   unprocessedCounts?: Record<string, number>;
 }
@@ -17,6 +19,7 @@ const GroupSelector: React.FC<GroupSelectorProps> = ({
   onChange,
   className = '',
   label = 'グループ',
+  allowAll = false,
   unprocessedCounts,
 }) => {
   return (
@@ -24,15 +27,17 @@ const GroupSelector: React.FC<GroupSelectorProps> = ({
       <span className="text-xs font-bold text-slate-500 whitespace-nowrap">{label}</span>
       <select
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => onChange(e.target.value as AdminGroupSelection)}
         className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-800 font-bold text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400"
       >
+        {allowAll && <option value={ALL_GROUPS_ID}>全員</option>}
         {groups.map((g) => {
           const unprocessed = unprocessedCounts?.[g.id] ?? 0;
           const pending = unprocessed > 0 ? `（未消込 ${unprocessed}）` : '';
           return (
             <option key={g.id} value={g.id}>
-              {g.name}{pending}
+              {g.name}
+              {pending}
             </option>
           );
         })}

@@ -70,7 +70,10 @@ export const AdminAppShellMock: React.FC<{
               highlightGroup ? 'ring-2 ring-teal-400' : ''
             }`}
           >
-            寮 ▾
+            グループ: 寮 ▾
+          </span>
+          <span className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold text-slate-400">
+            （切替に「全員」あり）
           </span>
           <span
             className={`inline-flex items-center rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-black text-rose-600 ${

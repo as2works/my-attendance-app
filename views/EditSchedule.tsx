@@ -309,7 +309,7 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
               <span className="block text-sm font-black text-slate-800">表示切替</span>
               <span className="block text-[11px] sm:text-xs text-slate-600 font-bold mt-0.5 leading-snug">
                 {showNeedsInputOnly
-                  ? '入力が必要な日のみ表示中（無し・△のみ表示中）'
+                  ? '入力が必要な日のみ表示中（空欄・△のみ表示中）'
                   : 'すべての日を表示中'}
               </span>
             </span>
@@ -343,14 +343,17 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
                     {statusOptions.map((opt) => (
                       <button
                         key={opt}
+                        type="button"
                         onClick={() => handleStatusChange(dateStr, opt)}
+                        aria-label={opt === '-' ? '空欄（未設定）' : opt}
+                        title={opt === '-' ? '空欄（未設定）' : undefined}
                         className={`w-9 h-9 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl flex items-center justify-center border-2 font-black text-xs sm:text-sm transition-all duration-75 active:scale-90 ${
                           status === opt
                             ? `${STATUS_COLORS[opt]} ring-2 ring-indigo-400 scale-105 shadow-md z-10`
                             : 'bg-white text-slate-300 border-slate-100 hover:border-slate-300'
                         }`}
                       >
-                        {opt === '-' ? '無し' : opt}
+                        {opt === '-' ? '' : opt}
                       </button>
                     ))}
                   </div>
@@ -378,8 +381,8 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
           </h3>
           <ul className="text-sm text-slate-500 space-y-2 list-disc list-inside">
             <li>日程ごとに記号ボタンをタップして予定を選択してください。</li>
-            <li>「表示切替」で無し・△に絞れます（変更中の日は登録まで残ります）。</li>
-            <li>「無し」を選択すると予定が未設定の状態になります。</li>
+            <li>「表示切替」で空欄・△に絞れます（変更中の日は登録まで残ります）。</li>
+            <li>空欄のボタンを選ぶと、予定が未設定の状態になります。</li>
             <li>入力を終えたら、画面上部の「登録する」ボタンを必ず押して保存してください。</li>
             <li>記号で表せない連絡は、上の「備考を書く」から入力できます（予定の保存とは別です）。</li>
           </ul>

@@ -37,7 +37,7 @@ const AdminManualTour: React.FC = () => (
       items={[
         '左メニューとヘッダーの役割を把握する',
         'グループ切替と未消込バッジの意味を理解する',
-        '「いまのグループだけ」と「全グループ共通の設定」の違いを区別する',
+        '「いまのグループだけ」「全員」「全グループ共通の設定」の違いを区別する',
       ]}
     />
 
@@ -56,7 +56,7 @@ const AdminManualTour: React.FC = () => (
           </li>
           <li>
             <strong className="text-slate-900">グループ切替</strong>
-            … いま操作するグループ（例: 寮／日勤）
+            … いま操作するグループ（例: 寮／日勤）。先頭の「全員」で全グループを一覧できます
           </li>
           <li>
             <strong className="text-slate-900">未消込バッジ</strong>
@@ -131,23 +131,24 @@ const AdminManualTour: React.FC = () => (
             <ul className="mt-2 space-y-1.5 text-sm font-medium leading-relaxed text-slate-700">
               <li>・予定一覧</li>
               <li>・変更履歴・消込</li>
-              <li>・利用者名簿の表示・追加先の見え方</li>
+              <li>・利用者名簿の表示・追加・並べ替え</li>
             </ul>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <p className="text-xs font-bold text-slate-500">全グループ共通</p>
+            <p className="text-xs font-bold text-slate-500">全グループ共通／「全員」表示</p>
             <ul className="mt-2 space-y-1.5 text-sm font-medium leading-relaxed text-slate-700">
               <li>・期間・休日・ユーザID表示</li>
               <li>・CSV出力（全グループ分）</li>
               <li>・入場URL一覧</li>
+              <li>・「全員」… 予定一覧だけ横断（履歴・消込は不可）</li>
             </ul>
           </div>
         </div>
         <div className="mt-4">
           <WarnBox>
-            画面上にも「表示・追加・履歴は、いま選んでいるグループだけが対象です」と出ます。
+            1グループを選んでいるときは、「表示・追加・履歴は、いま選んでいるグループだけ」と出ます。
             <br />
-            別グループを見るときは、必ずグループ切替を変えてください。
+            「全員」のときはグループ名列が出ます。名前をクリックすると、そのグループに切り替わり、消込などが使えます。
           </WarnBox>
         </div>
         <div className="mt-6">
@@ -218,7 +219,7 @@ const AdminManualTour: React.FC = () => (
     <CheckList
       items={[
         '左メニュー6系統の役割が言える',
-        'グループ切替の対象範囲が分かる',
+        'グループ切替と「全員」の違いが分かる',
         '未消込バッジの意味が分かる',
         '予定のマス編集は「一般画面へ」だと分かる',
       ]}

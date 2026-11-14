@@ -6,6 +6,16 @@ export type GroupId = string;
 
 export type WorkspaceId = string;
 
+/** 管理者のグループ切替専用。実グループIDではない */
+export const ALL_GROUPS_ID = '__all__' as const;
+export type AdminGroupSelection = GroupId | typeof ALL_GROUPS_ID;
+
+export function isAllGroupsSelection(
+  value: string | null | undefined
+): value is typeof ALL_GROUPS_ID {
+  return value === ALL_GROUPS_ID;
+}
+
 /** 初期シード用の固定ID（既存データ互換） */
 export const DEFAULT_GROUP_IDS = {
   DORM: 'dorm',
@@ -123,4 +133,12 @@ export interface AccessSession {
 
 export function groupLabel(groups: Group[], groupId: GroupId): string {
   return groups.find((g) => g.id === groupId)?.name || groupId;
+}
+
+export function adminGroupSelectionLabel(
+  groups: Group[],
+  selection: AdminGroupSelection
+): string {
+  if (isAllGroupsSelection(selection)) return '全員';
+  return groupLabel(groups, selection);
 }

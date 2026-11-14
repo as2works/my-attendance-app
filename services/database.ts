@@ -123,8 +123,14 @@ export const db = {
     return { ...data, config: normalizeConfig(data.config) };
   },
 
-  getUsers: async (groupId?: GroupId): Promise<User[]> =>
-    invoke<User[]>('getUsers', { groupId }),
+  getUsers: async (
+    groupId?: GroupId,
+    options?: { allGroups?: boolean }
+  ): Promise<User[]> =>
+    invoke<User[]>(
+      'getUsers',
+      options?.allGroups ? { allGroups: true } : { groupId }
+    ),
 
   saveUsers: async (users: User[]) => {
     await invoke('saveUsers', { users });
@@ -149,9 +155,15 @@ export const db = {
     userIds: string[],
     year: number,
     month: number,
-    groupId?: GroupId
+    groupId?: GroupId,
+    options?: { allGroups?: boolean }
   ): Promise<Schedule[]> =>
-    invoke<Schedule[]>('getSchedulesForMonth', { userIds, year, month, groupId }),
+    invoke<Schedule[]>(
+      'getSchedulesForMonth',
+      options?.allGroups
+        ? { userIds, year, month, allGroups: true }
+        : { userIds, year, month, groupId }
+    ),
 
   getSchedulesForUser: async (
     userId: string,

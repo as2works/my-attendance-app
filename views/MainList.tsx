@@ -5,7 +5,18 @@ import GroupSelector from '../components/GroupSelector';
 import UserNoteButton, { hasUserNote } from '../components/UserNoteButton';
 import UserNoteModal from '../components/UserNoteModal';
 import { db } from '../services/database';
-import { User, Schedule, SystemConfig, AttendanceStatus, GroupId, Group, groupLabel, userMatchesQuery } from '../types';
+import {
+  User,
+  Schedule,
+  SystemConfig,
+  AttendanceStatus,
+  Group,
+  AdminGroupSelection,
+  groupLabel,
+  adminGroupSelectionLabel,
+  isAllGroupsSelection,
+  userMatchesQuery,
+} from '../types';
 import { STATUS_COLORS, STATUS_LABELS, getStatusOptions } from '../constants';
 import {
   toDateKey,
@@ -24,8 +35,8 @@ interface MainListProps {
   groups: Group[];
   onNavigateAdmin: () => void;
   isAdmin: boolean;
-  groupId: GroupId;
-  onGroupChange: (groupId: GroupId) => void;
+  groupId: AdminGroupSelection;
+  onGroupChange: (groupId: AdminGroupSelection) => void;
   /** bootstrapGeneral からの初回データ。一致する group/年月なら初回 fetch をスキップ */
   initialData?: {
     users: User[];
@@ -53,8 +64,9 @@ const MainList: React.FC<MainListProps> = ({
   onSchedulePatchApplied,
   syncDocumentTitle = true,
 }) => {
-  const currentGroup = groups.find((g) => g.id === groupId);
-  const currentGroupName = groupLabel(groups, groupId);
+  const isAllMode = isAdmin && isAllGroupsSelection(groupId);
+  const currentGroup = !isAllMode ? groups.find((g) => g.id === groupId) : undefined;
+  const currentGroupName = adminGroupSelectionLabel(groups, groupId);
   const fallbackPeriod = getSeasonDisplayPeriod(config.seasonStartDate, config.seasonEndDate);
   const hasBootData =
     !!initialData &&
@@ -93,12 +105,16 @@ const MainList: React.FC<MainListProps> = ({
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const groupUsers = await db.getUsers(groupId);
+        const allGroups = isAdmin && isAllGroupsSelection(groupId);
+        const groupUsers = await db.getUsers(allGroups ? undefined : groupId, {
+          allGroups,
+        });
         const groupSchedules = await db.getSchedulesForMonth(
           groupUsers.map((u) => u.id),
           currentYear,
           currentMonth,
-          groupId
+          allGroups ? undefined : groupId,
+          { allGroups }
         );
         if (seq !== fetchSeqRef.current) return;
         setUsers(groupUsers);
@@ -157,7 +173,10 @@ const MainList: React.FC<MainListProps> = ({
     config.seasonStartDate,
     config.seasonEndDate
   );
-  const legendStatuses = getStatusOptions(currentGroup).filter(s => s !== '-');
+  const legendGroup = isAllMode
+    ? groups.find((g) => g.hasLodgingStatuses) || groups[0]
+    : currentGroup;
+  const legendStatuses = getStatusOptions(legendGroup).filter((s) => s !== '-');
   const canGoPrev = monthIntersectsSeason(
     currentMonth === 0 ? currentYear - 1 : currentYear,
     currentMonth === 0 ? 11 : currentMonth - 1,
@@ -207,7 +226,12 @@ const MainList: React.FC<MainListProps> = ({
         <div className="p-4 sm:p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-slate-50/50">
           <div className="flex flex-col sm:flex-row items-center gap-4">
             {isAdmin && (
-              <GroupSelector groups={groups} value={groupId} onChange={onGroupChange} />
+              <GroupSelector
+                groups={groups}
+                value={groupId}
+                onChange={onGroupChange}
+                allowAll
+              />
             )}
             <div className="flex items-center space-x-4">
               <button
@@ -283,6 +307,11 @@ const MainList: React.FC<MainListProps> = ({
                 <th className="px-1.5 sm:px-3 py-2 sm:py-3 w-[108px] min-w-[108px] max-w-[108px] sm:w-[148px] sm:min-w-[148px] sm:max-w-[148px] sticky top-0 left-0 bg-slate-50 z-30 border-b border-r border-slate-200 shadow-[2px_0_5px_rgba(0,0,0,0.05)] text-[11px] sm:text-sm">
                   {showEmployeeId ? 'ユーザID / 氏名' : '氏名'}
                 </th>
+                {isAllMode && (
+                  <th className="px-1.5 sm:px-2 py-2 sm:py-3 min-w-[64px] sm:min-w-[88px] sticky top-0 z-20 border-b border-r border-slate-100 bg-slate-50 text-[11px] sm:text-sm">
+                    グループ
+                  </th>
+                )}
                 {days.map(day => {
                   const dow = getDayOfWeek(day);
                   const tone = getDayTone(toDateKey(currentYear, currentMonth, day), config.holidays || []);
@@ -331,6 +360,21 @@ const MainList: React.FC<MainListProps> = ({
                       </div>
                     </div>
                   </td>
+                  {isAllMode && (
+                    <td className="px-1.5 sm:px-2 py-1.5 sm:py-2.5 border-b border-r border-slate-100 align-middle">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onGroupChange(user.groupId);
+                        }}
+                        className="max-w-[5.5rem] sm:max-w-[7rem] truncate text-left text-[10px] sm:text-[11px] font-black text-indigo-700 underline decoration-indigo-200 underline-offset-2 hover:text-indigo-900"
+                        title={`${groupLabel(groups, user.groupId)}に切り替える`}
+                      >
+                        {groupLabel(groups, user.groupId)}
+                      </button>
+                    </td>
+                  )}
                   {days.map(day => {
                     const status = getStatus(user.id, day);
                     const tone = getDayTone(toDateKey(currentYear, currentMonth, day), config.holidays || []);
@@ -346,21 +390,30 @@ const MainList: React.FC<MainListProps> = ({
               ))}
               {!isLoading && users.length === 0 && (
                 <tr>
-                  <td colSpan={Math.max(days.length, 1) + 1} className="px-4 py-12 text-center text-slate-400 font-medium">
+                  <td
+                    colSpan={Math.max(days.length, 1) + 1 + (isAllMode ? 1 : 0)}
+                    className="px-4 py-12 text-center text-slate-400 font-medium"
+                  >
                     {currentGroupName}の利用者が登録されていません。管理画面から追加してください。
                   </td>
                 </tr>
               )}
               {!isLoading && users.length > 0 && filteredUsers.length === 0 && (
                 <tr>
-                  <td colSpan={Math.max(days.length, 1) + 1} className="px-4 py-12 text-center text-slate-400 font-medium">
+                  <td
+                    colSpan={Math.max(days.length, 1) + 1 + (isAllMode ? 1 : 0)}
+                    className="px-4 py-12 text-center text-slate-400 font-medium"
+                  >
                     「{nameQuery.trim()}」に一致する人がいません
                   </td>
                 </tr>
               )}
               {!isLoading && users.length > 0 && filteredUsers.length > 0 && days.length === 0 && (
                 <tr>
-                  <td colSpan={2} className="px-4 py-12 text-center text-slate-400 font-medium">
+                  <td
+                    colSpan={2 + (isAllMode ? 1 : 0)}
+                    className="px-4 py-12 text-center text-slate-400 font-medium"
+                  >
                     この月に入力対象の日はありません（シーズン期間外です）。
                   </td>
                 </tr>

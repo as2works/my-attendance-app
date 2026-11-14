@@ -9,6 +9,8 @@ import {
   DEFAULT_GROUP_IDS,
   Schedule,
   History,
+  AdminGroupSelection,
+  isAllGroupsSelection,
 } from './types';
 import MainList from './views/MainList';
 import EditSchedule from './views/EditSchedule';
@@ -42,7 +44,9 @@ const App: React.FC = () => {
   const [groups, setGroups] = useState<Group[]>([]);
   const [session, setSession] = useState<AccessSession | null>(null);
   const [workspaceName, setWorkspaceName] = useState('');
-  const [selectedGroupId, setSelectedGroupId] = useState<GroupId>(DEFAULT_GROUP_IDS.DORM);
+  const [selectedGroupId, setSelectedGroupId] = useState<AdminGroupSelection>(
+    DEFAULT_GROUP_IDS.DORM
+  );
   const [bootError, setBootError] = useState<string | null>(null);
   const [isBooting, setIsBooting] = useState(() => !isAnyManualPath());
   const [mainInitialData, setMainInitialData] = useState<{
@@ -306,12 +310,13 @@ const App: React.FC = () => {
     } else {
       next = await refreshGroups();
     }
+    if (isAllGroupsSelection(selectedGroupId)) return;
     if (!next.find((g) => g.id === selectedGroupId) && next[0]) {
       setSelectedGroupId(next[0].id);
     }
   };
 
-  const handleGroupChange = (groupId: GroupId) => {
+  const handleGroupChange = (groupId: AdminGroupSelection) => {
     if (!isAdminUser) return;
     setSelectedGroupId(groupId);
   };

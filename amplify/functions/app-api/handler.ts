@@ -627,6 +627,23 @@ async function assertEmployeeIdAvailable(
 
 async function getUsers(session: Session, payload: any) {
   const workspaceId = requireWorkspaceSession(session);
+  if (payload?.allGroups) {
+    requireAdmin(session);
+    const users = await listAllByFilter((nextToken) =>
+      client.models.User.listUsersByWorkspace(
+        { workspaceId },
+        { sortDirection: 'ASC', limit: 200, ...(nextToken ? { nextToken } : {}) }
+      ).then((r) => ({ data: r.data, nextToken: r.nextToken }))
+    );
+    return users.map((u) => ({
+      id: u.id,
+      name: u.name,
+      groupId: u.groupId || '',
+      employeeId: normalizeEmployeeId(u.employeeId),
+      note: typeof u.note === 'string' ? u.note : '',
+      workspaceId: u.workspaceId || workspaceId,
+    }));
+  }
   const groupId = await effectiveGroupId(session, payload.groupId);
   const users = await listAllByFilter((nextToken) =>
     client.models.User.listUsersByGroup(
@@ -647,6 +664,14 @@ async function getUsers(session: Session, payload: any) {
 async function assertUserInGroup(userId: string, groupId: GroupId) {
   const { data } = await client.models.User.get({ id: userId });
   if (!data || data.groupId !== groupId) fail('FORBIDDEN', 'user not in group');
+  return data;
+}
+
+async function assertUserInWorkspace(userId: string, workspaceId: WorkspaceId) {
+  const { data } = await client.models.User.get({ id: userId });
+  if (!data || (data.workspaceId || DEFAULT_WORKSPACE_ID) !== workspaceId) {
+    fail('FORBIDDEN', 'user not in workspace');
+  }
   return data;
 }
 
@@ -1366,17 +1391,28 @@ export const handler = async (event: { arguments: Args }) => {
         return ok(true);
       }
       case 'getSchedulesForMonth': {
-        const groupId = await effectiveGroupId(session, payload.groupId);
         const requested = Array.isArray(payload.userIds)
           ? [...new Set((payload.userIds as string[]).filter((id) => typeof id === 'string' && id))]
           : [];
         let userIds: string[];
-        if (requested.length) {
-          // クライアントが渡した ID を信頼せず所属確認のみ（全件 getUsers はしない）
-          await Promise.all(requested.map((id) => assertUserInGroup(id, groupId)));
-          userIds = requested;
+        if (payload?.allGroups) {
+          requireAdmin(session);
+          const workspaceId = requireWorkspaceSession(session);
+          if (requested.length) {
+            await Promise.all(requested.map((id) => assertUserInWorkspace(id, workspaceId)));
+            userIds = requested;
+          } else {
+            userIds = (await getUsers(session, { allGroups: true })).map((u) => u.id);
+          }
         } else {
-          userIds = (await getUsers(session, { groupId })).map((u) => u.id);
+          const groupId = await effectiveGroupId(session, payload.groupId);
+          if (requested.length) {
+            // クライアントが渡した ID を信頼せず所属確認のみ（全件 getUsers はしない）
+            await Promise.all(requested.map((id) => assertUserInGroup(id, groupId)));
+            userIds = requested;
+          } else {
+            userIds = (await getUsers(session, { groupId })).map((u) => u.id);
+          }
         }
         return ok(
           await listSchedulesForUserIdsInMonth(
