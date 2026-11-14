@@ -1072,7 +1072,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           )}
 
           {activeTab === 'USERS' && (
-            <div className="space-y-6 animate-in slide-in-from-right-4 duration-300 overflow-y-auto pr-2">
+            <div className="h-full min-h-0 space-y-6 animate-in slide-in-from-right-4 duration-300 overflow-y-auto pr-2 pb-8">
               {isAllMode ? (
                 <div className="rounded-xl border border-amber-100 bg-amber-50 p-4 text-sm font-medium leading-relaxed text-amber-900">
                   利用者の追加・並べ替え・移動・削除は、グループを選んでから行ってください。
@@ -1226,11 +1226,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           )}
 
           {activeTab === 'GROUPS' && (
-            <GroupsPanel groups={groups} onGroupsChange={(next) => onGroupsChange(next)} />
+            <div className="h-full min-h-0 overflow-y-auto pr-2 pb-8">
+              <GroupsPanel groups={groups} onGroupsChange={(next) => onGroupsChange(next)} />
+            </div>
           )}
 
           {activeTab === 'CONFIG' && (
-            <div className="space-y-6 max-w-xl animate-in slide-in-from-right-4 duration-300 overflow-y-auto">
+            <div className="h-full min-h-0 max-w-xl space-y-6 animate-in slide-in-from-right-4 duration-300 overflow-y-auto pr-2 pb-8">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-xl font-black text-slate-800">システム設定（全体共通）</h3>
                 {configSaveNotice && (
@@ -1343,7 +1345,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           )}
 
           {(activeTab === 'LINKS' || linksEverOpened) && (
-            <div className={activeTab === 'LINKS' ? undefined : 'hidden'} aria-hidden={activeTab !== 'LINKS'}>
+            <div
+              className={
+                activeTab === 'LINKS'
+                  ? 'h-full min-h-0 overflow-y-auto pr-2 pb-8'
+                  : 'hidden'
+              }
+              aria-hidden={activeTab !== 'LINKS'}
+            >
               <AccessLinksPanel currentLinkId={currentLinkId} groups={groups} />
             </div>
           )}

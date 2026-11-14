@@ -126,7 +126,7 @@ const AccessLinksPanel: React.FC<AccessLinksPanelProps> = ({ currentLinkId, grou
   };
 
   return (
-    <div className="space-y-6 animate-in slide-in-from-right-4 duration-300 overflow-y-auto pr-2 pb-8">
+    <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
       <div>
         <h3 className="text-xl font-black text-slate-800">入場URL</h3>
         <p className="text-sm text-slate-500 font-medium mt-1">
