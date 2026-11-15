@@ -9,7 +9,7 @@ const STATUS_CELL: Record<string, string> = {
   '': 'bg-white border-slate-100',
 };
 
-const EDIT_OPTS = ['〇', '×', '△', 'AM', 'PM', 'in', 'out', ''] as const;
+const EDIT_OPTS = ['〇', '×', '△', 'AM', 'PM', 'in', 'out', '未入力'] as const;
 
 /** 一般の出勤予定一覧（実画面に近い） */
 export const MainListScreenMock: React.FC<{
@@ -259,7 +259,7 @@ export const EditScheduleScreenMock: React.FC<{
           <div className="min-w-0 flex-1">
             <p className="text-sm font-black text-slate-800">表示切替</p>
             <p className="break-words text-[11px] font-bold leading-snug text-slate-600">
-              入力が必要な日のみ表示中（空欄・△のみ表示中）
+              入力が必要な日のみ表示中（未入力・△のみ表示中）
             </p>
           </div>
         </div>
@@ -270,7 +270,7 @@ export const EditScheduleScreenMock: React.FC<{
           <div key={row.date} className="border-b border-slate-100 px-3 py-2.5 last:border-b-0">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-1">
               <span className={`text-sm font-black ${row.tone || 'text-slate-800'}`}>{row.date}</span>
-              {row.status !== '' && (
+              {row.status !== '未入力' && (
                 <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[8px] font-black text-indigo-700">
                   変更あり
                 </span>
@@ -279,7 +279,7 @@ export const EditScheduleScreenMock: React.FC<{
             <div className="flex flex-wrap gap-1">
               {EDIT_OPTS.map((s) => (
                 <span
-                  key={s || 'blank'}
+                  key={s}
                   className={`flex h-8 min-w-[2rem] items-center justify-center rounded-lg border-2 px-1 text-[10px] font-black ${
                     s === row.status
                       ? s === '〇'
@@ -290,7 +290,11 @@ export const EditScheduleScreenMock: React.FC<{
                       : 'border-slate-100 bg-white text-slate-300'
                   }`}
                 >
-                  {s}
+                  {s === '未入力' ? (
+                    <span className="text-[8px] leading-none">未入力</span>
+                  ) : (
+                    s
+                  )}
                 </span>
               ))}
             </div>

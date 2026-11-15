@@ -114,7 +114,7 @@ const GeneralManualRegister: React.FC = () => (
             <p className="mt-3 text-sm font-medium leading-relaxed text-slate-500">
               「AM」は午前だけ、「PM」は午後だけ、出られるときです。
               <br />
-              文字のない空欄ボタンを押すと、まだ決めていない状態に戻ります。
+              「未入力」を押すと、まだ決めていない状態に戻ります。
             </p>
             <p className="mt-3 text-sm font-medium leading-relaxed text-slate-500">
               寮のグループでは「in」「out」も出ることがあります。
@@ -170,7 +170,7 @@ const GeneralManualRegister: React.FC = () => (
             日付が少ないように見えるとき
           </h3>
           <p className="mt-2 text-sm font-medium leading-relaxed text-slate-600">
-            「表示切替」にチェックが付いていると、予定がまだ決まっていない日（空欄や「△」の日）だけが出ます。
+            「表示切替」にチェックが付いていると、予定がまだ決まっていない日（「未入力」や「△」の日）だけが出ます。
             〇や×を入れた日も含めて全部見たいときは、そのチェックを外してください。
           </p>
         </div>
