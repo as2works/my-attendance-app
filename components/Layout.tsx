@@ -51,11 +51,11 @@ const Layout: React.FC<LayoutProps> = ({
                 href={GENERAL_MANUAL_PATH}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs sm:text-sm font-medium hover:text-indigo-200 transition whitespace-nowrap"
+                className="inline-flex items-center gap-1 text-xs sm:text-sm font-medium hover:text-indigo-200 transition whitespace-nowrap"
                 title="使い方マニュアル（一般）"
               >
-                <i className="fas fa-book-open sm:mr-1"></i>
-                <span className="hidden sm:inline">使い方</span>
+                <i className="fas fa-book-open"></i>
+                <span>使い方</span>
               </a>
             )}
             {showAdminManualLink && (
@@ -63,11 +63,11 @@ const Layout: React.FC<LayoutProps> = ({
                 href={ADMIN_MANUAL_PATH}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs sm:text-sm font-medium hover:text-indigo-200 transition whitespace-nowrap"
+                className="inline-flex items-center gap-1 text-xs sm:text-sm font-medium hover:text-indigo-200 transition whitespace-nowrap"
                 title="使い方マニュアル（管理者）"
               >
-                <i className="fas fa-book-open sm:mr-1"></i>
-                <span className="hidden sm:inline">使い方</span>
+                <i className="fas fa-book-open"></i>
+                <span>使い方</span>
               </a>
             )}
             {showNav && (
@@ -82,11 +82,11 @@ const Layout: React.FC<LayoutProps> = ({
             <button
               type="button"
               onClick={onLogout}
-              className="bg-indigo-700 hover:bg-indigo-800 px-2.5 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center space-x-2"
+              className="bg-indigo-700 hover:bg-indigo-800 px-2 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition inline-flex items-center gap-1 sm:gap-2"
               title="ログアウト"
             >
               <i className="fas fa-sign-out-alt"></i>
-              <span className="hidden sm:inline">ログアウト</span>
+              <span>ログアウト</span>
             </button>
           </div>
         </div>

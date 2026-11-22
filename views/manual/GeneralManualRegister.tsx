@@ -101,8 +101,8 @@ const GeneralManualRegister: React.FC = () => (
             <p className="mt-3 text-sm font-medium text-slate-500">いちばんよく使うのは、次の3つです。</p>
             <div className="mt-3 grid grid-cols-3 gap-2">
               {[
-                { s: '〇', l: '出られる', c: 'bg-emerald-50 text-emerald-800 border-emerald-100' },
-                { s: '×', l: '休みたい', c: 'bg-rose-50 text-rose-800 border-rose-100' },
+                { s: '〇', l: '出られる', c: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+                { s: '×', l: '休みたい', c: 'bg-slate-200 text-slate-700 border-slate-300' },
                 { s: '△', l: 'まだ未定', c: 'bg-amber-50 text-amber-800 border-amber-100' },
               ].map((x) => (
                 <div key={x.s} className={`rounded-xl border px-2 py-2.5 text-center ${x.c}`}>
@@ -117,8 +117,8 @@ const GeneralManualRegister: React.FC = () => (
               「未入力」を押すと、まだ決めていない状態に戻ります。
             </p>
             <p className="mt-3 text-sm font-medium leading-relaxed text-slate-500">
-              寮のグループでは「in」「out」も出ることがあります。
-              仕事をしない入寮・退寮の日に使います。くわしくは
+              寮のグループでは「〇in」「×in」「〇out」「×out」も出ることがあります。
+              入寮・退寮と、その日の勤務の有無をセットで選びます。くわしくは
               <a
                 href={generalManualHref('list')}
                 className="mx-1 font-bold text-teal-700 underline decoration-teal-300 underline-offset-2"

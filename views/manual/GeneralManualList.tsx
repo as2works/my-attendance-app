@@ -74,8 +74,8 @@ const GeneralManualList: React.FC = () => (
         </p>
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
           {[
-            { s: '〇', l: '出られる', c: 'bg-emerald-50 text-emerald-800 border-emerald-100' },
-            { s: '×', l: '休みたい', c: 'bg-rose-50 text-rose-800 border-rose-100' },
+            { s: '〇', l: '出られる', c: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+            { s: '×', l: '休みたい', c: 'bg-slate-200 text-slate-700 border-slate-300' },
             { s: '△', l: 'まだ未定', c: 'bg-amber-50 text-amber-800 border-amber-100' },
             { s: 'AM', l: '午前だけ', c: 'bg-sky-50 text-sky-800 border-sky-100' },
             { s: 'PM', l: '午後だけ', c: 'bg-violet-50 text-violet-800 border-violet-100' },
@@ -87,30 +87,41 @@ const GeneralManualList: React.FC = () => (
             </div>
           ))}
         </div>
-        <div className="mt-5 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 sm:p-5">
-          <p className="text-xs font-bold text-indigo-700">寮の人向け（in / out が出るグループだけ）</p>
+        <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:p-5">
+          <p className="text-xs font-bold text-slate-600">
+            寮の人向け（〇in／×in／〇out／×out が出るグループだけ）
+          </p>
           <p className="mt-2 text-sm font-medium leading-relaxed text-slate-700">
-            「in」と「out」は、<strong className="text-slate-900">仕事をしない日</strong>
-            に使います。
+            入寮・退寮の日に、その日の勤務の有無も合わせて選びます。色は 〇系が緑、×系が灰です。
           </p>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            <div className="rounded-xl border border-indigo-100 bg-white px-3 py-3">
-              <p className="font-display text-sm font-extrabold text-indigo-800">in</p>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3">
+              <p className="font-display text-sm font-extrabold text-emerald-800">〇in</p>
               <p className="mt-1 text-sm font-medium leading-relaxed text-slate-600">
-                入寮する日で、その日は仕事をしないとき
+                入寮し、その日は勤務あり
               </p>
             </div>
-            <div className="rounded-xl border border-indigo-100 bg-white px-3 py-3">
-              <p className="font-display text-sm font-extrabold text-indigo-800">out</p>
+            <div className="rounded-xl border border-slate-300 bg-slate-100 px-3 py-3">
+              <p className="font-display text-sm font-extrabold text-slate-700">×in</p>
               <p className="mt-1 text-sm font-medium leading-relaxed text-slate-600">
-                退寮する日で、その日は仕事をしないとき
-                <br />
-                （寮に泊まったあと、仕事はしない日）
+                入寮するが、その日は仕事をしない
+              </p>
+            </div>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3">
+              <p className="font-display text-sm font-extrabold text-emerald-800">〇out</p>
+              <p className="mt-1 text-sm font-medium leading-relaxed text-slate-600">
+                出勤したうえで退寮する
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-300 bg-slate-100 px-3 py-3">
+              <p className="font-display text-sm font-extrabold text-slate-700">×out</p>
+              <p className="mt-1 text-sm font-medium leading-relaxed text-slate-600">
+                出勤せずに退寮する
               </p>
             </div>
           </div>
           <p className="mt-3 text-sm font-bold leading-relaxed text-slate-800">
-            入寮や退寮の日でも、仕事をするなら「in」「out」ではなく、〇・AM・PM などを選びます。
+            午前だけ退寮など細かいケースは、記号ではなく備考欄に書いてください。
           </p>
         </div>
       </StepCard>

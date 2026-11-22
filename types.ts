@@ -1,5 +1,15 @@
 
-export type AttendanceStatus = '〇' | '×' | '△' | 'AM' | 'PM' | 'in' | 'out' | '-';
+export type AttendanceStatus =
+  | '〇'
+  | '×'
+  | '△'
+  | 'AM'
+  | 'PM'
+  | '〇in'
+  | '×in'
+  | '〇out'
+  | '×out'
+  | '-';
 
 /** グループIDは動的（初期 seed は dorm / home） */
 export type GroupId = string;

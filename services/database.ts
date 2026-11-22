@@ -165,6 +165,21 @@ export const db = {
         : { userIds, year, month, groupId }
     ),
 
+  /** シーズン全日など、任意の日付範囲で予定を取得（getSchedulesForMonth と同じ API） */
+  getSchedulesForRange: async (
+    userIds: string[],
+    dateFrom: string,
+    dateTo: string,
+    groupId?: GroupId,
+    options?: { allGroups?: boolean }
+  ): Promise<Schedule[]> =>
+    invoke<Schedule[]>(
+      'getSchedulesForMonth',
+      options?.allGroups
+        ? { userIds, dateFrom, dateTo, allGroups: true }
+        : { userIds, dateFrom, dateTo, groupId }
+    ),
+
   getSchedulesForUser: async (
     userId: string,
     groupId?: GroupId,
@@ -187,6 +202,8 @@ export const db = {
     groupId?: GroupId;
     updates: Array<{ date: string; status: string }>;
     message: string;
+    /** true なら履歴を消込済みで作成（新規入力のみ想定） */
+    isProcessed?: boolean;
   }) => {
     await invoke('saveUserSchedules', params);
   },

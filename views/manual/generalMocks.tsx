@@ -2,14 +2,18 @@ import React from 'react';
 
 const STATUS_CELL: Record<string, string> = {
   '〇': 'bg-emerald-100 text-emerald-700 border-emerald-200',
-  '×': 'bg-rose-100 text-rose-700 border-rose-200',
+  '×': 'bg-slate-200 text-slate-700 border-slate-300',
   '△': 'bg-amber-100 text-amber-700 border-amber-200',
   AM: 'bg-sky-100 text-sky-700 border-sky-200',
   PM: 'bg-violet-100 text-violet-700 border-violet-200',
+  '〇in': 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  '×in': 'bg-slate-200 text-slate-700 border-slate-300',
+  '〇out': 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  '×out': 'bg-slate-200 text-slate-700 border-slate-300',
   '': 'bg-white border-slate-100',
 };
 
-const EDIT_OPTS = ['〇', '×', '△', 'AM', 'PM', 'in', 'out', '未入力'] as const;
+const EDIT_OPTS = ['〇', '×', '△', 'AM', 'PM', '〇in', '×in', '〇out', '×out', '未入力'] as const;
 
 /** 一般の出勤予定一覧（実画面に近い） */
 export const MainListScreenMock: React.FC<{
@@ -130,8 +134,9 @@ export const MainListScreenMock: React.FC<{
         </div>
         <div className="flex shrink-0 items-center gap-2 text-[10px] font-medium sm:text-xs">
           <span>使い方</span>
-          <span className="rounded-lg bg-indigo-700 px-2 py-1">
+          <span className="inline-flex items-center gap-1 rounded-lg bg-indigo-700 px-2 py-1">
             <i className="fas fa-sign-out-alt" />
+            ログアウト
           </span>
         </div>
       </div>
@@ -203,9 +208,11 @@ export const EditScheduleScreenMock: React.FC<{
         <i className="fas fa-calendar-check shrink-0 text-sm" />
         <span className="truncate text-xs font-bold">山田 太郎 さんの予定編集（寮）</span>
       </div>
-      <div className="flex shrink-0 items-center gap-2 text-[10px]">
-        <span className="rounded-lg bg-indigo-700 px-2 py-1">
+      <div className="flex shrink-0 items-center gap-2 text-[10px] font-medium">
+        <span>使い方</span>
+        <span className="inline-flex items-center gap-1 rounded-lg bg-indigo-700 px-2 py-1">
           <i className="fas fa-sign-out-alt" />
+          ログアウト
         </span>
       </div>
     </div>
@@ -276,16 +283,16 @@ export const EditScheduleScreenMock: React.FC<{
                 </span>
               )}
             </div>
-            <div className="flex flex-wrap gap-1">
+            <div className="grid grid-cols-5 gap-1">
               {EDIT_OPTS.map((s) => (
                 <span
                   key={s}
-                  className={`flex h-8 min-w-[2rem] items-center justify-center rounded-lg border-2 px-1 text-[10px] font-black ${
+                  className={`flex h-8 w-full items-center justify-center rounded-lg border-2 px-0.5 text-[10px] font-black ${
                     s === row.status
-                      ? s === '〇'
-                        ? 'scale-105 border-indigo-400 bg-emerald-100 text-emerald-700 ring-2 ring-indigo-400'
-                        : s === '×'
-                          ? 'border-indigo-400 bg-rose-100 text-rose-700 ring-2 ring-indigo-400'
+                      ? s === '〇' || s === '〇in' || s === '〇out'
+                        ? 'border-indigo-400 bg-emerald-100 text-emerald-700 ring-2 ring-indigo-400'
+                        : s === '×' || s === '×in' || s === '×out'
+                          ? 'border-indigo-400 bg-slate-200 text-slate-700 ring-2 ring-indigo-400'
                           : 'border-indigo-400 bg-indigo-50 text-indigo-600 ring-2 ring-indigo-400'
                       : 'border-slate-100 bg-white text-slate-300'
                   }`}

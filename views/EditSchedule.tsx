@@ -7,7 +7,7 @@ import { User, SystemConfig, AttendanceStatus, Group, groupLabel, Schedule } fro
 import { getDayTone, dayToneTextClass, listDatesInSeason } from '../services/calendarTone';
 import { db } from '../services/database';
 import { getStatusOptions, STATUS_COLORS } from '../constants';
-import { buildHistoryMessage } from '../services/historyMessage';
+import { buildHistoryMessage, isNewScheduleInput } from '../services/historyMessage';
 
 interface EditScheduleProps {
   user: User;
@@ -19,6 +19,8 @@ interface EditScheduleProps {
   onLogout: () => void;
   /** 保存成功時。一覧の差分更新用 */
   onSaved?: (updates: Schedule[]) => void;
+  /** 備考保存成功時。一覧の備考アイコン即時反映用 */
+  onNoteSaved?: (userId: string, note: string) => void;
 }
 
 function schedulesToMap(rows: Schedule[]): Record<string, AttendanceStatus> {
@@ -37,6 +39,7 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
   onBack,
   onLogout,
   onSaved,
+  onNoteSaved,
 }) => {
   const currentGroup = groups.find((g) => g.id === user.groupId);
   const currentGroupName = groupLabel(groups, user.groupId);
@@ -157,6 +160,8 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
           groupId: user.groupId,
           updates: changes.map((c) => ({ date: c.date, status: c.newStatus })),
           message,
+          // 新規のみはログに残しつつ未消込ノイズにしない
+          isProcessed: isNewScheduleInput(changes),
         });
         onSaved?.(changedUpdates);
         setSaveNotice('予定を保存しました');
@@ -202,9 +207,11 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
     };
   };
 
-  const gridClass = statusOptions.length > 6
-    ? 'grid grid-cols-4 sm:grid-cols-8 gap-1 sm:gap-2'
-    : 'grid grid-cols-3 sm:grid-cols-6 gap-1 sm:gap-2';
+  // 寮: 5列×2段（基本行＋入退寮行）。通常: 3列（スマホ）／6列（PC）
+  const hasLodgingOpts = statusOptions.length > 6;
+  const optionsWrapClass = hasLodgingOpts
+    ? 'grid grid-cols-5 gap-1.5 w-full sm:gap-2 sm:max-w-[22rem] sm:ml-auto'
+    : 'grid grid-cols-3 sm:grid-cols-6 gap-1.5 w-full sm:w-auto sm:gap-2 sm:ml-auto';
 
   const canEdit = !loadError || hasSeed;
   const blockSave = !hasChanges || isSaving || isLoading || loadError;
@@ -339,25 +346,33 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
                     {isChanged && <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-black rounded-full uppercase tracking-tighter shadow-sm">変更あり</span>}
                   </div>
 
-                  <div className={gridClass}>
-                    {statusOptions.map((opt) => (
-                      <button
-                        key={opt}
-                        type="button"
-                        onClick={() => handleStatusChange(dateStr, opt)}
-                        aria-label={opt === '-' ? '未入力' : opt}
-                        title={opt === '-' ? '未入力' : undefined}
-                        className={`w-9 h-9 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl flex items-center justify-center border-2 font-black transition-all duration-75 active:scale-90 ${
-                          opt === '-' ? 'text-[9px] sm:text-[10px] leading-tight' : 'text-xs sm:text-sm'
-                        } ${
-                          status === opt
-                            ? `${STATUS_COLORS[opt]} ring-2 ring-indigo-400 scale-105 shadow-md z-10`
-                            : 'bg-white text-slate-300 border-slate-100 hover:border-slate-300'
-                        }`}
-                      >
-                        {opt === '-' ? '未入力' : opt}
-                      </button>
-                    ))}
+                  <div className={optionsWrapClass}>
+                    {statusOptions.map((opt) => {
+                      const isUnset = opt === '-';
+                      const isLong = opt.length > 2;
+                      return (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => handleStatusChange(dateStr, opt)}
+                          aria-label={isUnset ? '未入力' : opt}
+                          title={isUnset ? '未入力' : undefined}
+                          className={`h-10 sm:h-11 w-full rounded-lg sm:rounded-xl flex items-center justify-center border-2 font-black transition-all duration-75 active:scale-90 px-0.5 ${
+                            isUnset
+                              ? 'text-[9px] sm:text-[10px] leading-tight'
+                              : isLong
+                                ? 'text-[10px] sm:text-xs tracking-tight'
+                                : 'text-xs sm:text-sm'
+                          } ${
+                            status === opt
+                              ? `${STATUS_COLORS[opt]} ring-2 ring-indigo-400 shadow-md z-10`
+                              : 'bg-white text-slate-300 border-slate-100 hover:border-slate-300'
+                          }`}
+                        >
+                          {isUnset ? '未入力' : opt}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -386,6 +401,7 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
             <li>「表示切替」で未入力・△に絞れます（変更中の日は登録まで残ります）。</li>
             <li>「未入力」を選ぶと、予定がまだ決まっていない状態になります。</li>
             <li>入力を終えたら、画面上部の「登録する」ボタンを必ず押して保存してください。</li>
+            <li>寮グループでは 〇in／×in／〇out／×out も選べます（午前だけ退寮など細部は備考へ）。</li>
             <li>記号で表せない連絡は、上の「備考を書く」から入力できます（予定の保存とは別です）。</li>
           </ul>
         </div>
@@ -398,7 +414,10 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
           groupId={user.groupId}
           initialNote={note}
           onClose={() => setNoteOpen(false)}
-          onSaved={(next) => setNote(next)}
+          onSaved={(next) => {
+            setNote(next);
+            onNoteSaved?.(user.id, next);
+          }}
         />
       )}
     </Layout>

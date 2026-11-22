@@ -23,7 +23,7 @@ const schema = a.schema({
     .model({
       id: a.string().required(),
       name: a.string().required(),
-      /** true のとき in/out（入寮・退寮）記号を使える */
+      /** true のとき 〇in/×in/〇out/×out（入寮・退寮）記号を使える */
       hasLodgingStatuses: a.boolean().default(false),
       order: a.integer().default(0),
       workspaceId: a.id(),

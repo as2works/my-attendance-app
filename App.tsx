@@ -57,6 +57,7 @@ const App: React.FC = () => {
   } | null>(null);
   const [editSeedSchedules, setEditSeedSchedules] = useState<Schedule[]>([]);
   const [schedulePatch, setSchedulePatch] = useState<Schedule[] | null>(null);
+  const [notePatch, setNotePatch] = useState<{ userId: string; note: string } | null>(null);
   const [adminInitialData, setAdminInitialData] = useState<AdminInitialData | null>(null);
   const [adminSoftRefreshToken, setAdminSoftRefreshToken] = useState(0);
   const [devBootstrapLinks, setDevBootstrapLinks] = useState<{
@@ -286,6 +287,15 @@ const App: React.FC = () => {
     }
   };
 
+  const handleNoteSaved = (userId: string, note: string) => {
+    setNotePatch({ userId, note });
+    setCurrentUser((prev) => (prev && prev.id === userId ? { ...prev, note } : prev));
+    // 備考履歴カードを管理者パネルへ即反映
+    if (isAdminUser) {
+      setAdminSoftRefreshToken((n) => n + 1);
+    }
+  };
+
   const handleEditBack = () => {
     setCurrentUser(null);
     setEditSeedSchedules([]);
@@ -418,6 +428,8 @@ const App: React.FC = () => {
             initialData={mainInitialData}
             schedulePatch={schedulePatch}
             onSchedulePatchApplied={() => setSchedulePatch(null)}
+            notePatch={notePatch}
+            onNotePatchApplied={() => setNotePatch(null)}
             syncDocumentTitle={view === 'MAIN'}
           />
         </div>
@@ -433,6 +445,7 @@ const App: React.FC = () => {
           onBack={handleEditBack}
           onLogout={handleLogout}
           onSaved={handleEditSaved}
+          onNoteSaved={handleNoteSaved}
         />
       )}
 
@@ -451,6 +464,7 @@ const App: React.FC = () => {
             initialData={adminInitialData}
             softRefreshToken={adminSoftRefreshToken}
             schedulePatch={schedulePatch}
+            notePatch={notePatch}
             syncDocumentTitle={view === 'ADMIN'}
           />
         </div>

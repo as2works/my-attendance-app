@@ -43,7 +43,18 @@ const DEFAULT_WORKSPACE_ID = 'default';
 const PORTAL_CONFIG_ID = '_portal';
 const DEFAULT_GROUP_IDS = { DORM: 'dorm', HOME: 'home' } as const;
 const BASE_STATUSES = new Set(['〇', '×', '△', 'AM', 'PM', '-']);
-const LODGING_STATUSES = new Set(['〇', '×', '△', 'AM', 'PM', 'in', 'out', '-']);
+const LODGING_STATUSES = new Set([
+  '〇',
+  '×',
+  '△',
+  'AM',
+  'PM',
+  '〇in',
+  '×in',
+  '〇out',
+  '×out',
+  '-',
+]);
 const USER_NOTE_MAX_LENGTH = 300;
 const WORKSPACE_NOTE_MAX_LENGTH = 300;
 
@@ -285,17 +296,26 @@ async function listSchedulesForUserQuery(
   }
 }
 
+async function listSchedulesForUserIdsInRange(
+  userIds: string[],
+  from: string,
+  to: string
+): Promise<ScheduleRow[]> {
+  if (!userIds.length) return [];
+  if (from > to) return [];
+  const pages = await mapPoolConcurrent(userIds, 10, (userId) =>
+    listSchedulesForUserQuery(userId, { from, to })
+  );
+  return pages.flat();
+}
+
 async function listSchedulesForUserIdsInMonth(
   userIds: string[],
   year: number,
   month: number
 ): Promise<ScheduleRow[]> {
-  if (!userIds.length) return [];
   const { start, end } = monthBounds(year, month);
-  const pages = await mapPoolConcurrent(userIds, 10, (userId) =>
-    listSchedulesForUserQuery(userId, { from: start, to: end })
-  );
-  return pages.flat();
+  return listSchedulesForUserIdsInRange(userIds, start, end);
 }
 
 async function resolveSession(token?: string | null): Promise<Session> {
@@ -1246,13 +1266,21 @@ export const handler = async (event: { arguments: Args }) => {
         if (errors?.length || !updated) {
           fail('SAVE_FAILED', errors?.[0]?.message || 'note update failed');
         }
-        const message = next
-          ? `${user.name}さんの備考が変更されました。`
-          : `${user.name}さんの備考が削除されました。`;
+        // 備考は新規・変更とも未消込。消込カードで本文を読めるようメッセージに含める
+        let message: string;
+        if (!next) {
+          message = prev
+            ? `${user.name}さんの備考が削除されました。\n（削除前）\n${prev}`
+            : `${user.name}さんの備考が削除されました。`;
+        } else if (!prev) {
+          message = `${user.name}さんの備考が登録されました。\n${next}`;
+        } else {
+          message = `${user.name}さんの備考が変更されました。\n${next}`;
+        }
         await client.models.History.create({
           userId: user.id,
           userName: user.name,
-          message,
+          message: message.slice(0, 2000),
           isProcessed: false,
           groupId,
           workspaceId,
@@ -1414,6 +1442,17 @@ export const handler = async (event: { arguments: Args }) => {
             userIds = (await getUsers(session, { groupId })).map((u) => u.id);
           }
         }
+        const dateFrom =
+          typeof payload.dateFrom === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(payload.dateFrom)
+            ? payload.dateFrom
+            : null;
+        const dateTo =
+          typeof payload.dateTo === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(payload.dateTo)
+            ? payload.dateTo
+            : null;
+        if (dateFrom && dateTo) {
+          return ok(await listSchedulesForUserIdsInRange(userIds, dateFrom, dateTo));
+        }
         return ok(
           await listSchedulesForUserIdsInMonth(
             userIds,
@@ -1495,7 +1534,8 @@ export const handler = async (event: { arguments: Args }) => {
             userId,
             userName,
             message,
-            isProcessed: false,
+            // クライアントが新規入力のみと判定したとき消込済みで残す（変更・混在は false）
+            isProcessed: !!payload.isProcessed,
             groupId,
             workspaceId,
             recordedAt,
@@ -1506,10 +1546,13 @@ export const handler = async (event: { arguments: Args }) => {
       case 'getHistories': {
         const groupId = await effectiveGroupId(session, payload.groupId);
         const includeProcessed = !!payload.includeProcessed;
-        const limit = payload.limit ?? (includeProcessed ? 100 : 80);
+        // 未消込のみのとき、直近に消込済み（新規入力の自動済など）が並ぶと
+        // limit 後フィルタで未消込が落ちるので、多めに取ってから絞る
+        const displayLimit = Number(payload.limit) > 0 ? Number(payload.limit) : includeProcessed ? 100 : 80;
+        const fetchLimit = includeProcessed ? displayLimit : Math.max(displayLimit * 4, 200);
         const { data } = await client.models.History.listHistoriesByGroup(
           { groupId },
-          { sortDirection: 'DESC', limit }
+          { sortDirection: 'DESC', limit: fetchLimit }
         );
         const mapped = data.map((h) => ({
           id: h.id,
@@ -1521,7 +1564,8 @@ export const handler = async (event: { arguments: Args }) => {
           groupId: h.groupId || groupId,
           recordedAt: h.recordedAt ?? h.createdAt,
         }));
-        return ok(includeProcessed ? mapped : mapped.filter((h) => !h.isProcessed));
+        if (includeProcessed) return ok(mapped.slice(0, displayLimit));
+        return ok(mapped.filter((h) => !h.isProcessed).slice(0, displayLimit));
       }
       case 'getUnprocessedHistoryCounts': {
         requireAdmin(session);

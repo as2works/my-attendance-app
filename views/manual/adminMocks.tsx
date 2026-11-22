@@ -2,10 +2,14 @@ import React from 'react';
 
 const STATUS_CELL: Record<string, string> = {
   '〇': 'bg-emerald-100 text-emerald-700 border-emerald-200',
-  '×': 'bg-rose-100 text-rose-700 border-rose-200',
+  '×': 'bg-slate-200 text-slate-700 border-slate-300',
   '△': 'bg-amber-100 text-amber-700 border-amber-200',
   AM: 'bg-sky-100 text-sky-700 border-sky-200',
   PM: 'bg-violet-100 text-violet-700 border-violet-200',
+  '〇in': 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  '×in': 'bg-slate-200 text-slate-700 border-slate-300',
+  '〇out': 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  '×out': 'bg-slate-200 text-slate-700 border-slate-300',
   '': 'bg-white text-slate-300 border-slate-100',
 };
 
@@ -44,21 +48,22 @@ export const AdminAppShellMock: React.FC<{
         </div>
         <div className="flex shrink-0 items-center gap-1.5 text-[10px] font-medium sm:gap-2 sm:text-xs">
           <span
-            className={`hidden sm:inline ${
+            className={
               highlightHeader === 'manual' ? 'rounded bg-teal-400 px-1.5 py-0.5 font-black text-slate-900' : ''
-            }`}
+            }
           >
             使い方
           </span>
           <span
-            className={`hidden sm:inline ${
+            className={
               highlightHeader === 'general' ? 'rounded bg-teal-400 px-1.5 py-0.5 font-black text-slate-900' : ''
-            }`}
+            }
           >
             一般画面へ
           </span>
-          <span className="rounded-lg bg-indigo-700 px-2 py-1">
+          <span className="inline-flex items-center gap-1 rounded-lg bg-indigo-700 px-2 py-1">
             <i className="fas fa-sign-out-alt" />
+            ログアウト
           </span>
         </div>
       </div>
@@ -484,7 +489,7 @@ export const AdminGroupsScreenMock: React.FC<{ highlightLodging?: boolean }> = (
                   g.lodging ? 'text-indigo-600' : 'text-slate-400'
                 }`}
               >
-                {g.lodging ? '寮用記号あり（in / out）' : '寮用記号なし'}
+                {g.lodging ? '寮用記号あり（〇in／×out など）' : '寮用記号なし'}
               </p>
             </div>
             <div className="flex gap-1.5">
@@ -595,10 +600,11 @@ export const AdminHistoryScreenMock: React.FC<{
         <span className="truncate text-xs font-bold sm:text-sm">管理者パネル（寮）</span>
       </div>
       <div className="flex shrink-0 items-center gap-2 text-[10px] font-medium sm:text-xs">
-        <span className="hidden sm:inline">使い方</span>
-        <span className="hidden sm:inline">一般画面へ</span>
-        <span className="rounded-lg bg-indigo-700 px-2 py-1">
+        <span>使い方</span>
+        <span>一般画面へ</span>
+        <span className="inline-flex items-center gap-1 rounded-lg bg-indigo-700 px-2 py-1">
           <i className="fas fa-sign-out-alt" />
+          ログアウト
         </span>
       </div>
     </div>
@@ -735,8 +741,8 @@ export const AdminHistoryScreenMock: React.FC<{
                         12月4日 09:05
                       </span>
                     </div>
-                    <p className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-xs font-medium leading-relaxed text-slate-600">
-                      佐藤 花子: 備考を更新
+                    <p className="whitespace-pre-wrap rounded-lg border border-slate-100 bg-slate-50 p-3 text-xs font-medium leading-relaxed text-slate-600">
+                      {`佐藤 花子さんの備考が登録されました。\n鍵の受け渡しは初日の午前中希望`}
                     </p>
                   </div>
                   <div className="flex shrink-0 flex-col items-center gap-1.5 pt-1">

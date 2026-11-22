@@ -23,7 +23,7 @@ import {
   userMatchesQuery,
   normalizeEmployeeId,
 } from '../types';
-import { STATUS_COLORS } from '../constants';
+import { statusColorClass } from '../constants';
 import {
   toDateKey,
   getDayTone,
@@ -31,8 +31,52 @@ import {
   dayToneCellClass,
   mergeHolidays,
   getSeasonDisplayPeriod,
+  listDatesInSeason,
 } from '../services/calendarTone';
 import { exportAllAttendanceCsv } from '../services/exportAttendanceCsv';
+
+type OverviewDayCol = {
+  date: string;
+  day: number;
+  month: number;
+  year: number;
+  isMonthStart: boolean;
+};
+
+function buildOverviewDayCols(dateKeys: string[]): OverviewDayCol[] {
+  return dateKeys.map((date, i) => {
+    const [y, m, d] = date.split('-').map(Number);
+    const prev = i > 0 ? dateKeys[i - 1] : null;
+    const prevMonth = prev ? prev.slice(0, 7) : null;
+    return {
+      date,
+      day: d,
+      month: m - 1,
+      year: y,
+      isMonthStart: !prev || prevMonth !== date.slice(0, 7),
+    };
+  });
+}
+
+function buildMonthBands(cols: OverviewDayCol[]): { key: string; label: string; span: number }[] {
+  if (!cols.length) return [];
+  const multiYear = cols.some((c) => c.year !== cols[0].year);
+  const bands: { key: string; label: string; span: number }[] = [];
+  for (const c of cols) {
+    const key = `${c.year}-${c.month}`;
+    const last = bands[bands.length - 1];
+    if (last?.key === key) {
+      last.span += 1;
+      continue;
+    }
+    bands.push({
+      key,
+      label: multiYear ? `${c.year}年${c.month + 1}月` : `${c.month + 1}月`,
+      span: 1,
+    });
+  }
+  return bands;
+}
 
 const OVERVIEW_SPLIT_KEY = 'kss-admin-overview-split';
 /** 予定・履歴パネルそれぞれの最小高さ（px） */
@@ -83,6 +127,8 @@ interface AdminDashboardProps {
   softRefreshToken?: number;
   /** 編集保存直後の差分（MainList と同様に即時反映） */
   schedulePatch?: Schedule[] | null;
+  /** 編集画面で備考を保存したときの差分 */
+  notePatch?: { userId: string; note: string } | null;
   syncDocumentTitle?: boolean;
 }
 
@@ -99,6 +145,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   initialData = null,
   softRefreshToken = 0,
   schedulePatch = null,
+  notePatch = null,
   syncDocumentTitle = true,
 }) => {
   const hasBootData = !!initialData && initialData.year != null && initialData.month != null;
@@ -120,6 +167,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     isAllGroupsSelection(groupId) ? groups[0]?.id || '' : groupId
   );
   const [showProcessedHistory, setShowProcessedHistory] = useState(false);
+  /** 出勤予定一覧をシーズン全日で表示（管理者のみ） */
+  const [showFullSeason, setShowFullSeason] = useState(false);
   const [isUpdating, setIsUpdating] = useState(!hasBootData);
   const [currentMonth, setCurrentMonth] = useState(() =>
     hasBootData ? initialData!.month : new Date().getMonth()
@@ -152,6 +201,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const refreshSeqRef = useRef(0);
   const usersRef = useRef(users);
   usersRef.current = users;
+  const configRef = useRef(config);
+  configRef.current = config;
+  const showFullSeasonRef = useRef(showFullSeason);
+  showFullSeasonRef.current = showFullSeason;
   /** groupId|year|month|showProcessed=0 を一度だけスキップ */
   const consumedInitialKeyRef = useRef<string | null>(
     hasBootData ? `${groupId}|${initialData!.year}|${initialData!.month}|0` : null
@@ -162,6 +215,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     year: hasBootData ? initialData!.year : currentYear,
     month: hasBootData ? initialData!.month : currentMonth,
     showProcessed: false,
+    showFullSeason: false,
   });
   const softRefreshSeenRef = useRef(softRefreshToken);
   const overviewTabSoftRefreshSkipRef = useRef(true);
@@ -293,11 +347,27 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
       if (want.schedules) {
         const ids = groupUsers.map((u) => u.id);
+        const cfg = configRef.current;
+        const seasonStart = cfg?.seasonStartDate;
+        const seasonEnd = cfg?.seasonEndDate;
+        const useSeasonRange =
+          showFullSeasonRef.current &&
+          !!seasonStart &&
+          !!seasonEnd &&
+          seasonStart <= seasonEnd;
         parallel.push(
           (ids.length
-            ? db.getSchedulesForMonth(ids, year, month, allGroups ? undefined : groupId, {
-                allGroups,
-              })
+            ? useSeasonRange
+              ? db.getSchedulesForRange(
+                  ids,
+                  seasonStart!,
+                  seasonEnd!,
+                  allGroups ? undefined : groupId,
+                  { allGroups }
+                )
+              : db.getSchedulesForMonth(ids, year, month, allGroups ? undefined : groupId, {
+                  allGroups,
+                })
             : Promise.resolve([] as Schedule[])
           ).then((s) => {
             if (seq !== refreshSeqRef.current) return;
@@ -346,6 +416,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         year: currentYear,
         month: currentMonth,
         showProcessed: showProcessedHistory,
+        showFullSeason,
       };
       setIsUpdating(false);
       return;
@@ -355,16 +426,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const groupChanged = prev.groupId !== groupId;
     const monthChanged = prev.year !== currentYear || prev.month !== currentMonth;
     const histToggle = prev.showProcessed !== showProcessedHistory;
+    const seasonToggle = prev.showFullSeason !== showFullSeason;
     refreshDepsRef.current = {
       groupId,
       year: currentYear,
       month: currentMonth,
       showProcessed: showProcessedHistory,
+      showFullSeason,
     };
 
     if (groupChanged) {
       void refreshData(currentYear, currentMonth, { config: false });
-    } else if (histToggle && !monthChanged) {
+    } else if (histToggle && !monthChanged && !seasonToggle) {
       void refreshData(currentYear, currentMonth, {
         users: false,
         schedules: false,
@@ -372,7 +445,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         counts: false,
         histories: true,
       });
-    } else if (monthChanged && !histToggle) {
+    } else if ((seasonToggle || (monthChanged && !showFullSeason)) && !histToggle) {
       void refreshData(currentYear, currentMonth, {
         users: false,
         histories: false,
@@ -383,7 +456,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     } else {
       void refreshData(currentYear, currentMonth);
     }
-  }, [groupId, showProcessedHistory, currentYear, currentMonth]);
+  }, [groupId, showProcessedHistory, currentYear, currentMonth, showFullSeason]);
 
   useEffect(() => {
     if (skipCountsOnMountRef.current) {
@@ -418,6 +491,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return Array.from(map.values());
     });
   }, [schedulePatch]);
+
+  useEffect(() => {
+    if (!notePatch) return;
+    setUsers((prev) =>
+      prev.map((u) => (u.id === notePatch.userId ? { ...u, note: notePatch.note } : u))
+    );
+  }, [notePatch]);
 
   useEffect(() => {
     if (activeTab !== 'OVERVIEW') return;
@@ -567,6 +647,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const persistConfig = async (next: SystemConfig, successMessage?: string) => {
     setConfig(next);
+    configRef.current = next;
     try {
       const saved = await db.saveConfig({
         ...next,
@@ -645,19 +726,49 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setCurrentMonth(newDate.getMonth());
   };
 
-  const daysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
-  const numDays = daysInMonth(currentYear, currentMonth);
-  const daysArray = Array.from({ length: numDays }, (_, i) => i + 1);
-  const getDayOfWeek = (day: number) => new Date(currentYear, currentMonth, day).getDay();
   const getDayName = (dow: number) => ['日', '月', '火', '水', '木', '金', '土'][dow];
-  const isToday = (day: number) => {
+  const seasonStart = config?.seasonStartDate || '';
+  const seasonEnd = config?.seasonEndDate || '';
+  const canShowFullSeason = !!seasonStart && !!seasonEnd && seasonStart <= seasonEnd;
+
+  const overviewDayCols = useMemo((): OverviewDayCol[] => {
+    if (showFullSeason && canShowFullSeason) {
+      return buildOverviewDayCols(listDatesInSeason(seasonStart, seasonEnd));
+    }
+    const numDays = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const keys = Array.from({ length: numDays }, (_, i) =>
+      toDateKey(currentYear, currentMonth, i + 1)
+    );
+    return buildOverviewDayCols(keys);
+  }, [
+    showFullSeason,
+    canShowFullSeason,
+    seasonStart,
+    seasonEnd,
+    currentYear,
+    currentMonth,
+  ]);
+
+  const monthBands = useMemo(
+    () => (showFullSeason ? buildMonthBands(overviewDayCols) : []),
+    [showFullSeason, overviewDayCols]
+  );
+
+  const statusByUserDate = useMemo(() => {
+    const map = new Map<string, AttendanceStatus>();
+    for (const s of schedules) {
+      map.set(`${s.userId}|${s.date}`, (s.status as AttendanceStatus) || '-');
+    }
+    return map;
+  }, [schedules]);
+
+  const todayKey = useMemo(() => {
     const now = new Date();
-    return now.getFullYear() === currentYear && now.getMonth() === currentMonth && now.getDate() === day;
-  };
-  const getStatus = (userId: string, day: number): AttendanceStatus => {
-    const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return schedules.find(s => s.userId === userId && s.date === dateStr)?.status || '-';
-  };
+    return toDateKey(now.getFullYear(), now.getMonth(), now.getDate());
+  }, []);
+
+  const getStatus = (userId: string, date: string): AttendanceStatus =>
+    statusByUserDate.get(`${userId}|${date}`) || '-';
 
   const allUnprocessedTotal = groups.reduce(
     (sum, g) => sum + (unprocessedCounts[g.id] ?? 0),
@@ -860,32 +971,118 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       予定{filteredUsers.length} / 履歴{visibleHistories.length}
                     </span>
                   )}
-                  <div className="flex items-center space-x-2 bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-sm ml-auto shrink-0">
-                    <button onClick={() => handleMonthChange(-1)} className="p-1 hover:text-indigo-600 transition"><i className="fas fa-chevron-left"></i></button>
-                    <span className="font-bold text-xs min-w-[80px] text-center">{currentYear}年 {currentMonth + 1}月</span>
-                    <button onClick={() => handleMonthChange(1)} className="p-1 hover:text-indigo-600 transition"><i className="fas fa-chevron-right"></i></button>
+                  <div className="flex items-center gap-2 ml-auto shrink-0 flex-wrap justify-end">
+                    <label
+                      className={`flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-bold shadow-sm ${
+                        canShowFullSeason
+                          ? 'cursor-pointer border-slate-200 bg-white text-slate-700'
+                          : 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400'
+                      }`}
+                      title={
+                        canShowFullSeason
+                          ? 'シーズン開始〜終了の全日を横に並べて表示します'
+                          : '期間が設定されていません'
+                      }
+                    >
+                      <input
+                        type="checkbox"
+                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-200"
+                        checked={showFullSeason && canShowFullSeason}
+                        disabled={!canShowFullSeason}
+                        onChange={(e) => setShowFullSeason(e.target.checked)}
+                      />
+                      全期間を表示
+                    </label>
+                    {showFullSeason && canShowFullSeason ? (
+                      <div className="bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100 shadow-sm">
+                        <span className="font-bold text-xs text-indigo-800 whitespace-nowrap">
+                          {seasonStart.replace(/-/g, '/')}〜{seasonEnd.replace(/-/g, '/')}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center space-x-2 bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-sm">
+                        <button
+                          type="button"
+                          onClick={() => handleMonthChange(-1)}
+                          className="p-1 hover:text-indigo-600 transition"
+                          aria-label="前月"
+                        >
+                          <i className="fas fa-chevron-left"></i>
+                        </button>
+                        <span className="font-bold text-xs min-w-[80px] text-center">
+                          {currentYear}年 {currentMonth + 1}月
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleMonthChange(1)}
+                          className="p-1 hover:text-indigo-600 transition"
+                          aria-label="翌月"
+                        >
+                          <i className="fas fa-chevron-right"></i>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div className="flex-grow overflow-auto relative min-h-0">
                   <table className="w-full text-xs text-left border-separate border-spacing-0">
-                    <thead className="sticky top-0 z-30 bg-slate-50 text-slate-500 uppercase font-bold shadow-sm">
-                      <tr>
-                        <th className="px-3 py-3 min-w-[140px] sticky left-0 top-0 bg-slate-50 z-40 border-r border-b border-slate-200">
-                          {showEmployeeId ? 'ユーザID / 氏名' : '氏名'}
-                        </th>
-                        {isAllMode && (
-                          <th className="px-2 py-3 min-w-[72px] sticky top-0 bg-slate-50 z-30 border-r border-b border-slate-200">
-                            グループ
+                    <thead className="sticky top-0 z-30 bg-slate-50 text-slate-500 font-bold shadow-sm">
+                      {showFullSeason && monthBands.length > 0 && (
+                        <tr>
+                          <th
+                            rowSpan={2}
+                            className="px-3 py-2 min-w-[140px] sticky left-0 top-0 bg-slate-50 z-40 border-r border-b border-slate-200 align-middle"
+                          >
+                            {showEmployeeId ? 'ユーザID / 氏名' : '氏名'}
                           </th>
+                          {isAllMode && (
+                            <th
+                              rowSpan={2}
+                              className="px-2 py-2 min-w-[72px] sticky top-0 bg-slate-50 z-30 border-r border-b border-slate-200 align-middle"
+                            >
+                              グループ
+                            </th>
+                          )}
+                          {monthBands.map((band) => (
+                            <th
+                              key={band.key}
+                              colSpan={band.span}
+                              className="px-1 py-1.5 text-center border-r border-b border-slate-200 bg-slate-100 text-[10px] font-black tracking-wide text-slate-600 last:border-r-0"
+                            >
+                              {band.label}
+                            </th>
+                          ))}
+                        </tr>
+                      )}
+                      <tr>
+                        {!(showFullSeason && monthBands.length > 0) && (
+                          <>
+                            <th className="px-3 py-3 min-w-[140px] sticky left-0 top-0 bg-slate-50 z-40 border-r border-b border-slate-200">
+                              {showEmployeeId ? 'ユーザID / 氏名' : '氏名'}
+                            </th>
+                            {isAllMode && (
+                              <th className="px-2 py-3 min-w-[72px] sticky top-0 bg-slate-50 z-30 border-r border-b border-slate-200">
+                                グループ
+                              </th>
+                            )}
+                          </>
                         )}
-                        {daysArray.map(day => {
-                          const dow = getDayOfWeek(day);
-                          const tone = getDayTone(toDateKey(currentYear, currentMonth, day), holidays);
+                        {overviewDayCols.map((col) => {
+                          const dow = new Date(`${col.date}T00:00:00`).getDay();
+                          const tone = getDayTone(col.date, holidays);
+                          const isTodayCol = col.date === todayKey;
                           return (
-                            <th key={day} className={`px-1 py-2 text-center min-w-[35px] border-r border-b border-slate-200 last:border-r-0 ${dayToneHeaderClass(tone)} ${isToday(day) ? 'ring-2 ring-inset ring-indigo-400' : ''}`}>
-                              <div className="text-[9px] opacity-70">{getDayName(dow)}</div>
-                              <div className="font-black">{day}</div>
+                            <th
+                              key={col.date}
+                              className={`px-1 py-2 text-center min-w-[35px] border-r border-b border-slate-200 last:border-r-0 ${dayToneHeaderClass(tone)} ${
+                                isTodayCol ? 'ring-2 ring-inset ring-indigo-400' : ''
+                              } ${col.isMonthStart && showFullSeason ? 'border-l-2 border-l-slate-300' : ''}`}
+                            >
+                              <div className="text-[9px] opacity-70 font-bold normal-case">
+                                {getDayName(dow)}
+                              </div>
+                              <div className="font-black">{col.day}</div>
                             </th>
                           );
                         })}
@@ -925,12 +1122,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               </button>
                             </td>
                           )}
-                          {daysArray.map(day => {
-                            const status = getStatus(user.id, day);
-                            const tone = getDayTone(toDateKey(currentYear, currentMonth, day), holidays);
+                          {overviewDayCols.map((col) => {
+                            const status = getStatus(user.id, col.date);
+                            const tone = getDayTone(col.date, holidays);
                             return (
-                              <td key={day} className={`px-0 py-2 text-center border-r border-slate-100 last:border-r-0 ${dayToneCellClass(tone)}`}>
-                                <div className={`w-6 h-6 mx-auto rounded-md flex items-center justify-center border font-black text-[10px] ${STATUS_COLORS[status] || STATUS_COLORS['-']}`}>
+                              <td
+                                key={col.date}
+                                className={`px-0 py-2 text-center border-r border-slate-100 last:border-r-0 ${dayToneCellClass(tone)} ${
+                                  col.isMonthStart && showFullSeason ? 'border-l-2 border-l-slate-200' : ''
+                                }`}
+                              >
+                                <div
+                                  className={`mx-auto flex h-6 min-w-[1.5rem] items-center justify-center rounded-md border px-0.5 font-black ${
+                                    status.length > 2 ? 'text-[8px] tracking-tight' : 'text-[10px]'
+                                  } ${statusColorClass(status)}`}
+                                >
                                   {status === '-' ? '' : status}
                                 </div>
                               </td>
@@ -1370,6 +1576,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             setUsers((prev) =>
               prev.map((u) => (u.id === noteUser.id ? { ...u, note } : u))
             );
+            // 備考本文付きの履歴カードをすぐ見せる
+            void refreshData(currentYear, currentMonth, {
+              users: false,
+              schedules: false,
+              config: false,
+              counts: true,
+              histories: true,
+            });
           }}
         />
       )}

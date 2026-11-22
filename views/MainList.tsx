@@ -17,7 +17,13 @@ import {
   isAllGroupsSelection,
   userMatchesQuery,
 } from '../types';
-import { STATUS_COLORS, STATUS_LABELS, getStatusOptions } from '../constants';
+import {
+  STATUS_COLORS,
+  STATUS_LABELS,
+  getStatusOptions,
+  statusGlyphClass,
+  statusColorClass,
+} from '../constants';
 import {
   toDateKey,
   getDayTone,
@@ -47,6 +53,9 @@ interface MainListProps {
   /** 編集画面から戻ったときの予定差分 */
   schedulePatch?: Schedule[] | null;
   onSchedulePatchApplied?: () => void;
+  /** 編集画面で備考を保存したときの差分 */
+  notePatch?: { userId: string; note: string } | null;
+  onNotePatchApplied?: () => void;
   syncDocumentTitle?: boolean;
 }
 
@@ -62,6 +71,8 @@ const MainList: React.FC<MainListProps> = ({
   initialData = null,
   schedulePatch = null,
   onSchedulePatchApplied,
+  notePatch = null,
+  onNotePatchApplied,
   syncDocumentTitle = true,
 }) => {
   const isAllMode = isAdmin && isAllGroupsSelection(groupId);
@@ -158,6 +169,15 @@ const MainList: React.FC<MainListProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [schedulePatch]);
 
+  useEffect(() => {
+    if (!notePatch) return;
+    setUsers((prev) =>
+      prev.map((u) => (u.id === notePatch.userId ? { ...u, note: notePatch.note } : u))
+    );
+    onNotePatchApplied?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notePatch]);
+
   const showEmployeeId = config.showEmployeeId !== false;
   const normalizedQuery = nameQuery.trim().toLocaleLowerCase('ja');
   const filteredUsers = useMemo(() => {
@@ -223,8 +243,8 @@ const MainList: React.FC<MainListProps> = ({
       showGeneralManualLink
     >
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-4 sm:p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-slate-50/50">
-          <div className="flex flex-col sm:flex-row items-center gap-4">
+        <div className="p-3 sm:p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-2.5 sm:gap-4 bg-slate-50/50">
+          <div className="flex flex-col sm:flex-row items-center gap-2.5 sm:gap-4">
             {isAdmin && (
               <GroupSelector
                 groups={groups}
@@ -233,22 +253,22 @@ const MainList: React.FC<MainListProps> = ({
                 allowAll
               />
             )}
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-3 sm:space-x-4">
               <button
                 onClick={() => handleMonthChange(-1)}
                 disabled={!canGoPrev}
-                className={`p-2 rounded-lg border shadow-sm transition ${canGoPrev ? 'bg-white hover:bg-slate-50 border-slate-200' : 'bg-slate-50 border-slate-100 cursor-not-allowed opacity-40'}`}
+                className={`p-1.5 sm:p-2 rounded-lg border shadow-sm transition ${canGoPrev ? 'bg-white hover:bg-slate-50 border-slate-200' : 'bg-slate-50 border-slate-100 cursor-not-allowed opacity-40'}`}
                 aria-label="前月"
               >
                 <i className="fas fa-chevron-left text-slate-400"></i>
               </button>
-              <h2 className="text-xl font-bold text-slate-800 min-w-[140px] text-center">
+              <h2 className="text-lg sm:text-xl font-bold text-slate-800 min-w-[132px] sm:min-w-[140px] text-center">
                 {currentYear}年 {currentMonth + 1}月
               </h2>
               <button
                 onClick={() => handleMonthChange(1)}
                 disabled={!canGoNext}
-                className={`p-2 rounded-lg border shadow-sm transition ${canGoNext ? 'bg-white hover:bg-slate-50 border-slate-200' : 'bg-slate-50 border-slate-100 cursor-not-allowed opacity-40'}`}
+                className={`p-1.5 sm:p-2 rounded-lg border shadow-sm transition ${canGoNext ? 'bg-white hover:bg-slate-50 border-slate-200' : 'bg-slate-50 border-slate-100 cursor-not-allowed opacity-40'}`}
                 aria-label="翌月"
               >
                 <i className="fas fa-chevron-right text-slate-400"></i>
@@ -291,8 +311,8 @@ const MainList: React.FC<MainListProps> = ({
           </div>
         )}
 
-        {/* ヘッダー＋おおむね4〜5人分が見える高さ。以降は縦スクロール */}
-        <div className="relative min-h-[200px] max-h-[300px] sm:max-h-[340px] overflow-auto">
+        {/* スマホは枠を広げて人数を確保。氏名の字サイズは維持。以降は縦スクロール */}
+        <div className="relative min-h-[220px] max-h-[min(58dvh,520px)] sm:max-h-[400px] overflow-auto">
           {isLoading && (
             <div className="absolute inset-0 bg-white/60 z-40 flex items-center justify-center backdrop-blur-[1px]">
               <div className="flex flex-col items-center gap-3">
@@ -304,11 +324,11 @@ const MainList: React.FC<MainListProps> = ({
           <table className="w-full text-sm text-left border-separate border-spacing-0">
             <thead className="text-slate-500 uppercase font-semibold">
               <tr>
-                <th className="px-1.5 sm:px-3 py-2 sm:py-3 w-[108px] min-w-[108px] max-w-[108px] sm:w-[148px] sm:min-w-[148px] sm:max-w-[148px] sticky top-0 left-0 bg-slate-50 z-30 border-b border-r border-slate-200 shadow-[2px_0_5px_rgba(0,0,0,0.05)] text-[11px] sm:text-sm">
+                <th className="px-1.5 sm:px-3 py-1.5 sm:py-3 w-[108px] min-w-[108px] max-w-[108px] sm:w-[148px] sm:min-w-[148px] sm:max-w-[148px] sticky top-0 left-0 bg-slate-50 z-30 border-b border-r border-slate-200 shadow-[2px_0_5px_rgba(0,0,0,0.05)] text-[11px] sm:text-sm">
                   {showEmployeeId ? 'ユーザID / 氏名' : '氏名'}
                 </th>
                 {isAllMode && (
-                  <th className="px-1.5 sm:px-2 py-2 sm:py-3 min-w-[64px] sm:min-w-[88px] sticky top-0 z-20 border-b border-r border-slate-100 bg-slate-50 text-[11px] sm:text-sm">
+                  <th className="px-1.5 sm:px-2 py-1.5 sm:py-3 min-w-[64px] sm:min-w-[88px] sticky top-0 z-20 border-b border-r border-slate-100 bg-slate-50 text-[11px] sm:text-sm">
                     グループ
                   </th>
                 )}
@@ -318,7 +338,7 @@ const MainList: React.FC<MainListProps> = ({
                   return (
                     <th
                       key={day}
-                      className={`px-0.5 sm:px-2 py-1.5 sm:py-3 text-center min-w-[34px] sm:min-w-[45px] sticky top-0 z-20 border-b border-r border-slate-100 last:border-r-0 bg-slate-50 ${dayToneHeaderClass(tone)} ${isToday(day) ? 'ring-2 ring-inset ring-indigo-400' : ''}`}
+                      className={`px-0.5 sm:px-2 py-1 sm:py-3 text-center min-w-[34px] sm:min-w-[45px] sticky top-0 z-20 border-b border-r border-slate-100 last:border-r-0 bg-slate-50 ${dayToneHeaderClass(tone)} ${isToday(day) ? 'ring-2 ring-inset ring-indigo-400' : ''}`}
                     >
                       <div className="text-[9px] sm:text-[10px] opacity-70 leading-none mb-0.5">{getDayName(dow)}</div>
                       <div className="text-xs sm:text-sm font-bold leading-none">{day}</div>
@@ -330,38 +350,46 @@ const MainList: React.FC<MainListProps> = ({
             <tbody>
               {filteredUsers.map(user => (
                 <tr key={user.id} className="hover:bg-slate-50 transition group">
-                  <td className="px-1.5 sm:px-2.5 py-1.5 sm:py-2.5 font-medium text-slate-700 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-b border-r border-slate-200 shadow-[2px_0_5px_rgba(0,0,0,0.05)] w-[108px] min-w-[108px] max-w-[108px] sm:w-[148px] sm:min-w-[148px] sm:max-w-[148px]">
-                    <div className="flex flex-col gap-1">
-                      {showEmployeeId && user.employeeId ? (
-                        <span className="block truncate text-[10px] sm:text-[11px] font-bold text-slate-400 leading-tight" title={user.employeeId}>
-                          {user.employeeId}
+                  <td className="px-1.5 sm:px-2.5 py-1 sm:py-2.5 font-medium text-slate-700 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-b border-r border-slate-200 shadow-[2px_0_5px_rgba(0,0,0,0.05)] w-[108px] min-w-[108px] max-w-[108px] sm:w-[148px] sm:min-w-[148px] sm:max-w-[148px]">
+                    {/* 左: 氏名＋編集 / 右: 備考（行高は増やさない） */}
+                    <div className="flex items-start gap-1.5">
+                      <div className="min-w-0 flex-1 flex flex-col gap-0.5 sm:gap-1">
+                        {showEmployeeId && user.employeeId ? (
+                          <span
+                            className="block truncate text-[10px] sm:text-[11px] font-bold text-slate-400 leading-tight"
+                            title={user.employeeId}
+                          >
+                            {user.employeeId}
+                          </span>
+                        ) : null}
+                        <span
+                          className="block truncate text-xs sm:text-sm font-bold leading-tight tracking-tight"
+                          title={user.name}
+                        >
+                          {user.name}
                         </span>
-                      ) : null}
-                      <span className="block truncate text-xs sm:text-sm font-bold leading-tight tracking-tight" title={user.name}>
-                        {user.name}
-                      </span>
-                      <div className="flex items-center gap-1">
                         <button
+                          type="button"
                           onClick={() =>
                             onEditUser(
                               user,
                               schedules.filter((s) => s.userId === user.id)
                             )
                           }
-                          className="flex-1 px-1 py-1 text-[10px] sm:text-xs font-bold bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition shadow-sm shadow-indigo-100"
+                          className="w-full px-1 py-0.5 sm:py-1 text-[10px] sm:text-xs font-bold bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition shadow-sm shadow-indigo-100"
                         >
                           編集
                         </button>
-                        <UserNoteButton
-                          hasNote={hasUserNote(user.note)}
-                          onClick={() => setNoteUser(user)}
-                          className="!w-6 !h-6 text-[10px]"
-                        />
                       </div>
+                      <UserNoteButton
+                        hasNote={hasUserNote(user.note)}
+                        onClick={() => setNoteUser(user)}
+                        className="!w-6 !h-6 text-[10px] shrink-0"
+                      />
                     </div>
                   </td>
                   {isAllMode && (
-                    <td className="px-1.5 sm:px-2 py-1.5 sm:py-2.5 border-b border-r border-slate-100 align-middle">
+                    <td className="px-1.5 sm:px-2 py-1 sm:py-2.5 border-b border-r border-slate-100 align-middle">
                       <button
                         type="button"
                         onClick={(e) => {
@@ -379,8 +407,8 @@ const MainList: React.FC<MainListProps> = ({
                     const status = getStatus(user.id, day);
                     const tone = getDayTone(toDateKey(currentYear, currentMonth, day), config.holidays || []);
                     return (
-                      <td key={day} className={`px-0.5 sm:px-1 py-1.5 sm:py-3 text-center border-b border-r border-slate-100 last:border-r-0 ${dayToneCellClass(tone)} ${isToday(day) ? 'bg-indigo-50/50' : ''}`}>
-                        <div className={`w-7 h-7 sm:w-8 sm:h-8 mx-auto rounded-md sm:rounded-lg flex items-center justify-center border-2 font-black text-[10px] sm:text-xs transition-all group-hover:scale-110 ${STATUS_COLORS[status] || STATUS_COLORS['-']}`}>
+                      <td key={day} className={`px-0.5 sm:px-1 py-1 sm:py-3 text-center border-b border-r border-slate-100 last:border-r-0 ${dayToneCellClass(tone)} ${isToday(day) ? 'bg-indigo-50/50' : ''}`}>
+                        <div className={`${statusGlyphClass(status)} mx-auto rounded-md sm:rounded-lg flex items-center justify-center border-2 font-black transition-all group-hover:scale-110 ${statusColorClass(status)}`}>
                           {status === '-' ? '' : status}
                         </div>
                       </td>
@@ -423,14 +451,20 @@ const MainList: React.FC<MainListProps> = ({
         </div>
       </div>
 
-      <div className="mt-8 bg-white p-6 rounded-2xl border border-slate-200 flex flex-wrap gap-6 items-center text-sm text-slate-600 shadow-sm">
-        <span className="font-bold text-slate-800 border-b-2 border-indigo-500 pb-1">凡例:</span>
+      <div className="mt-3 sm:mt-6 bg-white px-2.5 py-2 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200 flex flex-wrap gap-x-2.5 gap-y-1.5 sm:gap-4 items-center text-[10px] sm:text-xs text-slate-500 shadow-sm">
+        <span className="font-bold text-slate-600 border-b border-indigo-400 pb-0.5">凡例</span>
         {legendStatuses.map(status => (
-          <div key={status} className="flex items-center gap-2">
-            <span className={`w-7 h-7 rounded-lg border-2 flex items-center justify-center font-bold text-xs ${STATUS_COLORS[status]}`}>
+          <div key={status} className="flex items-center gap-1 sm:gap-1.5">
+            <span
+              className={`rounded border flex items-center justify-center font-bold ${STATUS_COLORS[status]} ${
+                status.length > 2
+                  ? 'h-5 min-w-[1.35rem] px-0.5 text-[8px] tracking-tight'
+                  : 'h-5 w-5 text-[9px] sm:h-6 sm:w-6 sm:text-[10px]'
+              }`}
+            >
               {status}
             </span>
-            {STATUS_LABELS[status]}
+            <span className="leading-none">{STATUS_LABELS[status]}</span>
           </div>
         ))}
       </div>
