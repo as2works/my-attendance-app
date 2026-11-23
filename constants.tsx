@@ -29,18 +29,21 @@ export const STATUS_LABELS: Record<AttendanceStatus, string> = {
 };
 
 const SHARED_STATUSES: AttendanceStatus[] = ['〇', '×', '△', 'AM', 'PM', '-'];
-const LODGING_STATUSES: AttendanceStatus[] = [
-  '〇',
-  '×',
-  '△',
-  'AM',
-  'PM',
-  '〇in',
-  '×in',
-  '〇out',
-  '×out',
-  '-',
+
+/** 寮グループの予定編集：列カテゴリ（お試しレイアウト） */
+export const LODGING_STATUS_COLUMNS: ReadonlyArray<{
+  title: string;
+  statuses: readonly AttendanceStatus[];
+}> = [
+  { title: '入寮のみ', statuses: ['×in'] },
+  { title: '勤務あり', statuses: ['〇in', '〇', '〇out', 'AM', 'PM'] },
+  { title: '勤務無し、未定', statuses: ['×', '×out', '△', '-'] },
 ];
+
+/** 寮: 編集UIの列順に合わせたフラット配列（凡例・許可リスト用） */
+const LODGING_STATUSES: AttendanceStatus[] = LODGING_STATUS_COLUMNS.flatMap((c) => [
+  ...c.statuses,
+]);
 
 export function getStatusOptions(groupOrFlag: Group | boolean | undefined): AttendanceStatus[] {
   const hasLodging =

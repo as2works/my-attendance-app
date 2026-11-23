@@ -6,7 +6,7 @@ import UserNoteModal from '../components/UserNoteModal';
 import { User, SystemConfig, AttendanceStatus, Group, groupLabel, Schedule } from '../types';
 import { getDayTone, dayToneTextClass, listDatesInSeason } from '../services/calendarTone';
 import { db } from '../services/database';
-import { getStatusOptions, STATUS_COLORS } from '../constants';
+import { getStatusOptions, LODGING_STATUS_COLUMNS, STATUS_COLORS } from '../constants';
 import { buildHistoryMessage, isNewScheduleInput } from '../services/historyMessage';
 
 interface EditScheduleProps {
@@ -207,14 +207,40 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
     };
   };
 
-  // 寮: 5列×2段（基本行＋入退寮行）。通常: 3列（スマホ）／6列（PC）
+  // 寮: カテゴリ3列。通常: 3列（スマホ）／6列（PC）
   const hasLodgingOpts = statusOptions.length > 6;
-  const optionsWrapClass = hasLodgingOpts
-    ? 'grid grid-cols-5 gap-1.5 w-full sm:gap-2 sm:max-w-[22rem] sm:ml-auto'
-    : 'grid grid-cols-3 sm:grid-cols-6 gap-1.5 w-full sm:w-auto sm:gap-2 sm:ml-auto';
+  const optionsWrapClass =
+    'grid grid-cols-3 sm:grid-cols-6 gap-1.5 w-full sm:w-auto sm:gap-2 sm:ml-auto';
 
   const canEdit = !loadError || hasSeed;
   const blockSave = !hasChanges || isSaving || isLoading || loadError;
+
+  const renderStatusButton = (dateStr: string, opt: AttendanceStatus, selected: AttendanceStatus) => {
+    const isUnset = opt === '-';
+    const isLong = opt.length > 2;
+    return (
+      <button
+        key={opt}
+        type="button"
+        onClick={() => handleStatusChange(dateStr, opt)}
+        aria-label={isUnset ? '未入力' : opt}
+        title={isUnset ? '未入力' : undefined}
+        className={`h-9 sm:h-10 w-full rounded-lg flex items-center justify-center border-2 font-black transition-all duration-75 active:scale-90 px-0.5 ${
+          isUnset
+            ? 'text-[9px] sm:text-[10px] leading-tight'
+            : isLong
+              ? 'text-[10px] sm:text-xs tracking-tight'
+              : 'text-xs sm:text-sm'
+        } ${
+          selected === opt
+            ? `${STATUS_COLORS[opt]} ring-2 ring-indigo-400 shadow-md z-10`
+            : 'bg-white text-slate-300 border-slate-100 hover:border-slate-300'
+        }`}
+      >
+        {isUnset ? '未入力' : opt}
+      </button>
+    );
+  };
 
   return (
     <Layout
@@ -346,34 +372,35 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
                     {isChanged && <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-black rounded-full uppercase tracking-tighter shadow-sm">変更あり</span>}
                   </div>
 
-                  <div className={optionsWrapClass}>
-                    {statusOptions.map((opt) => {
-                      const isUnset = opt === '-';
-                      const isLong = opt.length > 2;
-                      return (
-                        <button
-                          key={opt}
-                          type="button"
-                          onClick={() => handleStatusChange(dateStr, opt)}
-                          aria-label={isUnset ? '未入力' : opt}
-                          title={isUnset ? '未入力' : undefined}
-                          className={`h-10 sm:h-11 w-full rounded-lg sm:rounded-xl flex items-center justify-center border-2 font-black transition-all duration-75 active:scale-90 px-0.5 ${
-                            isUnset
-                              ? 'text-[9px] sm:text-[10px] leading-tight'
-                              : isLong
-                                ? 'text-[10px] sm:text-xs tracking-tight'
-                                : 'text-xs sm:text-sm'
-                          } ${
-                            status === opt
-                              ? `${STATUS_COLORS[opt]} ring-2 ring-indigo-400 shadow-md z-10`
-                              : 'bg-white text-slate-300 border-slate-100 hover:border-slate-300'
-                          }`}
+                  {hasLodgingOpts ? (
+                    <div className="w-full sm:max-w-xl sm:ml-auto grid grid-cols-3 gap-1.5 sm:gap-2">
+                      {LODGING_STATUS_COLUMNS.map((col) => (
+                        <div
+                          key={col.title}
+                          className="min-w-0 rounded-lg border border-slate-100 bg-slate-50/60 p-1 sm:p-1.5 flex flex-col gap-1"
                         >
-                          {isUnset ? '未入力' : opt}
-                        </button>
-                      );
-                    })}
-                  </div>
+                          <p className="text-[9px] sm:text-[10px] font-black text-slate-500 text-center leading-tight px-0.5">
+                            {col.title}
+                          </p>
+                          <div
+                            className={
+                              col.statuses.length <= 1
+                                ? 'grid grid-cols-1 gap-1'
+                                : col.title === '勤務あり'
+                                  ? 'grid grid-cols-3 gap-1'
+                                  : 'grid grid-cols-2 gap-1'
+                            }
+                          >
+                            {col.statuses.map((opt) => renderStatusButton(dateStr, opt, status))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className={optionsWrapClass}>
+                      {statusOptions.map((opt) => renderStatusButton(dateStr, opt, status))}
+                    </div>
+                  )}
                 </div>
               </div>
             );
