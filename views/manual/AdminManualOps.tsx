@@ -129,6 +129,18 @@ export const AdminManualDaily: React.FC = () => (
             … まだ予定が入っていない（未入力）
           </li>
           <li>・〇／×／△／AM／PM／〇in／×in／〇out／×out … その日の登録内容</li>
+          <li>
+            ・ヘッダー下の<strong className="text-slate-900">出勤人数</strong>
+            … 〇／AM／PM／〇in／〇out の合計。タイトルをクリックすると説明が出ます。数字にマウスを乗せると記号別内訳
+          </li>
+          <li>
+            ・寮グループではその下に<strong className="text-slate-900">宿泊人数</strong>
+            … 〇／AM／PM／〇in／×in（〇outは退寮日なので含めない）。「全員」では寮グループの人だけ合算
+          </li>
+          <li>
+            ・日付（曜日・日）をクリックすると<strong className="text-slate-900">その日だけ</strong>
+            に絞れます（氏名のすぐ横で記号を確認しやすい）。同じ日をもう一度クリック、または「全日表示」で戻ります
+          </li>
           <li>・土日や登録した休日は、色が付いて見えやすくなります</li>
         </ul>
         <div className="mt-4">

@@ -223,7 +223,7 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
       showGeneralManualLink
     >
       <div className="max-w-2xl mx-auto space-y-3 sm:space-y-6">
-        <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-slate-200 sticky top-[44px] sm:top-[72px] z-30 overflow-hidden">
+        <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-slate-200 sticky top-[44px] sm:top-[52px] z-30 overflow-hidden">
           <div className="px-3 py-2 sm:p-6 flex flex-row justify-between items-center gap-2 sm:gap-4">
             <div className="hidden sm:block">
               <h2 className="text-lg font-bold text-slate-800">各日程の予定を選択</h2>

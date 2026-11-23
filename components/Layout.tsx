@@ -40,10 +40,10 @@ const Layout: React.FC<LayoutProps> = ({
   return (
     <div className="flex flex-col min-h-screen bg-slate-50">
       <header className="bg-indigo-600 text-white shadow-md sticky top-0 z-50">
-        <div className="max-w-[1800px] mx-auto px-3 sm:px-4 lg:px-4 py-2 sm:py-4 flex justify-between items-center gap-2">
+        <div className="max-w-[1800px] mx-auto px-3 sm:px-4 lg:px-4 py-2 sm:py-2.5 flex justify-between items-center gap-2">
           <div className="flex items-center space-x-2 min-w-0">
-            <i className="fas fa-calendar-check text-lg sm:text-2xl shrink-0"></i>
-            <h1 className="text-sm sm:text-xl font-bold tracking-tight truncate">{title}</h1>
+            <i className="fas fa-calendar-check text-lg sm:text-xl shrink-0"></i>
+            <h1 className="text-sm sm:text-lg font-bold tracking-tight truncate">{title}</h1>
           </div>
           <div className="flex items-center space-x-2 sm:space-x-4 shrink-0">
             {showGeneralManualLink && (
@@ -91,7 +91,7 @@ const Layout: React.FC<LayoutProps> = ({
           </div>
         </div>
       </header>
-      <main className="flex-grow max-w-[1800px] w-full mx-auto px-3 sm:px-4 lg:px-4 py-3 sm:py-6">
+      <main className="flex-grow max-w-[1800px] w-full mx-auto px-3 sm:px-4 lg:px-4 py-3 sm:py-4">
         {children}
       </main>
       <footer className="bg-slate-100 border-t border-slate-200 py-6 mt-auto">

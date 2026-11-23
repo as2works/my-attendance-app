@@ -32,6 +32,8 @@ import {
   mergeHolidays,
   getSeasonDisplayPeriod,
   listDatesInSeason,
+  daysInMonthWithinSeason,
+  monthIntersectsSeason,
 } from '../services/calendarTone';
 import { exportAllAttendanceCsv } from '../services/exportAttendanceCsv';
 
@@ -42,6 +44,30 @@ type OverviewDayCol = {
   year: number;
   isMonthStart: boolean;
 };
+
+/** 管理者の日別出勤人数に含める記号（一般画面には出さない） */
+const WORK_ATTENDANCE_STATUSES = new Set<AttendanceStatus>([
+  '〇',
+  'AM',
+  'PM',
+  '〇in',
+  '〇out',
+]);
+
+const WORK_ATTENDANCE_BREAKDOWN_KEYS = ['〇', 'AM', 'PM', '〇in', '〇out'] as const;
+
+/** 寮宿泊人数（〇out は退寮日なので含めない） */
+const LODGING_OVERNIGHT_STATUSES = new Set<AttendanceStatus>([
+  '〇',
+  'AM',
+  'PM',
+  '〇in',
+  '×in',
+]);
+
+const LODGING_OVERNIGHT_BREAKDOWN_KEYS = ['〇', 'AM', 'PM', '〇in', '×in'] as const;
+
+type CountTipKind = 'work' | 'lodge';
 
 function buildOverviewDayCols(dateKeys: string[]): OverviewDayCol[] {
   return dateKeys.map((date, i) => {
@@ -169,6 +195,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [showProcessedHistory, setShowProcessedHistory] = useState(false);
   /** 出勤予定一覧をシーズン全日で表示（管理者のみ） */
   const [showFullSeason, setShowFullSeason] = useState(false);
+  /** 日付ヘッダークリックで1日に絞る（再クリック／全日表示で解除） */
+  const [focusedDate, setFocusedDate] = useState<string | null>(null);
+  /** 出勤人数／宿泊人数の説明ヒント */
+  const [countTip, setCountTip] = useState<CountTipKind | null>(null);
+  const countTipRef = useRef<HTMLTableSectionElement>(null);
   const [isUpdating, setIsUpdating] = useState(!hasBootData);
   const [currentMonth, setCurrentMonth] = useState(() =>
     hasBootData ? initialData!.month : new Date().getMonth()
@@ -225,6 +256,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const isAllMode = isAllGroupsSelection(groupId);
   const currentGroupName = adminGroupSelectionLabel(groups, groupId);
   const otherGroups = isAllMode ? groups : groups.filter((g) => g.id !== groupId);
+  const lodgingGroupIds = useMemo(
+    () => new Set(groups.filter((g) => g.hasLodgingStatuses).map((g) => g.id)),
+    [groups]
+  );
+  const showLodgingCountRow = isAllMode
+    ? lodgingGroupIds.size > 0
+    : lodgingGroupIds.has(groupId);
   const holidays = config?.holidays || [];
   const showEmployeeId = config?.showEmployeeId !== false;
   const normalizedQuery = nameQuery.trim().toLocaleLowerCase('ja');
@@ -720,25 +758,57 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleMonthChange = (offset: number) => {
-    const newDate = new Date(currentYear, currentMonth + offset, 1);
-    setCurrentYear(newDate.getFullYear());
-    setCurrentMonth(newDate.getMonth());
-  };
-
   const getDayName = (dow: number) => ['日', '月', '火', '水', '木', '金', '土'][dow];
   const seasonStart = config?.seasonStartDate || '';
   const seasonEnd = config?.seasonEndDate || '';
   const canShowFullSeason = !!seasonStart && !!seasonEnd && seasonStart <= seasonEnd;
 
+  const canGoPrevMonth =
+    !!seasonStart &&
+    !!seasonEnd &&
+    monthIntersectsSeason(
+      currentMonth === 0 ? currentYear - 1 : currentYear,
+      currentMonth === 0 ? 11 : currentMonth - 1,
+      seasonStart,
+      seasonEnd
+    );
+  const canGoNextMonth =
+    !!seasonStart &&
+    !!seasonEnd &&
+    monthIntersectsSeason(
+      currentMonth === 11 ? currentYear + 1 : currentYear,
+      currentMonth === 11 ? 0 : currentMonth + 1,
+      seasonStart,
+      seasonEnd
+    );
+
+  const handleMonthChange = (offset: number) => {
+    const newDate = new Date(currentYear, currentMonth + offset, 1);
+    const y = newDate.getFullYear();
+    const m = newDate.getMonth();
+    if (
+      seasonStart &&
+      seasonEnd &&
+      !monthIntersectsSeason(y, m, seasonStart, seasonEnd)
+    ) {
+      return;
+    }
+    setCurrentYear(y);
+    setCurrentMonth(m);
+  };
+
   const overviewDayCols = useMemo((): OverviewDayCol[] => {
     if (showFullSeason && canShowFullSeason) {
       return buildOverviewDayCols(listDatesInSeason(seasonStart, seasonEnd));
     }
-    const numDays = new Date(currentYear, currentMonth + 1, 0).getDate();
-    const keys = Array.from({ length: numDays }, (_, i) =>
-      toDateKey(currentYear, currentMonth, i + 1)
+    // 一般画面と同様、シーズン期間外の日付は列に出さない
+    const days = daysInMonthWithinSeason(
+      currentYear,
+      currentMonth,
+      seasonStart || '0000-01-01',
+      seasonEnd || '9999-12-31'
     );
+    const keys = days.map((day) => toDateKey(currentYear, currentMonth, day));
     return buildOverviewDayCols(keys);
   }, [
     showFullSeason,
@@ -749,10 +819,43 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     currentMonth,
   ]);
 
+  // 月送り・全期間切替・グループ変更・期間変更では日付絞り込みを解除
+  useEffect(() => {
+    setFocusedDate(null);
+    setCountTip(null);
+  }, [currentYear, currentMonth, showFullSeason, groupId, seasonStart, seasonEnd]);
+
+  // 期間トリムでフォーカス日が列から消えたら解除（全日表示ボタンの取り残し防止）
+  useEffect(() => {
+    if (!focusedDate) return;
+    if (!overviewDayCols.some((c) => c.date === focusedDate)) {
+      setFocusedDate(null);
+    }
+  }, [overviewDayCols, focusedDate]);
+
+  useEffect(() => {
+    if (!countTip) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const root = countTipRef.current;
+      if (root && !root.contains(e.target as Node)) setCountTip(null);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [countTip]);
+
+  const visibleDayCols = useMemo((): OverviewDayCol[] => {
+    if (!focusedDate) return overviewDayCols;
+    return overviewDayCols.filter((c) => c.date === focusedDate);
+  }, [overviewDayCols, focusedDate]);
+
   const monthBands = useMemo(
-    () => (showFullSeason ? buildMonthBands(overviewDayCols) : []),
-    [showFullSeason, overviewDayCols]
+    () => (showFullSeason && !focusedDate ? buildMonthBands(visibleDayCols) : []),
+    [showFullSeason, focusedDate, visibleDayCols]
   );
+
+  const toggleFocusDate = (date: string) => {
+    setFocusedDate((prev) => (prev === date ? null : date));
+  };
 
   const statusByUserDate = useMemo(() => {
     const map = new Map<string, AttendanceStatus>();
@@ -761,6 +864,61 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
     return map;
   }, [schedules]);
+
+  /** 画面に出ている人・日付だけ数える（検索／日付絞り込み後）。全員表示も合算 */
+  const dayAttendanceCounts = useMemo(() => {
+    const totals = new Map<string, number>();
+    const parts = new Map<string, Record<(typeof WORK_ATTENDANCE_BREAKDOWN_KEYS)[number], number>>();
+    for (const col of visibleDayCols) {
+      totals.set(col.date, 0);
+      parts.set(col.date, { '〇': 0, AM: 0, PM: 0, '〇in': 0, '〇out': 0 });
+    }
+    for (const user of filteredUsers) {
+      for (const col of visibleDayCols) {
+        const st = statusByUserDate.get(`${user.id}|${col.date}`) || '-';
+        if (!WORK_ATTENDANCE_STATUSES.has(st)) continue;
+        totals.set(col.date, (totals.get(col.date) || 0) + 1);
+        const bucket = parts.get(col.date);
+        if (bucket && st in bucket) {
+          bucket[st as (typeof WORK_ATTENDANCE_BREAKDOWN_KEYS)[number]] += 1;
+        }
+      }
+    }
+    return { totals, parts };
+  }, [filteredUsers, visibleDayCols, statusByUserDate]);
+
+  /** 寮グループの人だけ。〇out は退寮日なので宿泊人数に含めない */
+  const dayLodgingCounts = useMemo(() => {
+    const totals = new Map<string, number>();
+    const parts = new Map<
+      string,
+      Record<(typeof LODGING_OVERNIGHT_BREAKDOWN_KEYS)[number], number>
+    >();
+    for (const col of visibleDayCols) {
+      totals.set(col.date, 0);
+      parts.set(col.date, { '〇': 0, AM: 0, PM: 0, '〇in': 0, '×in': 0 });
+    }
+    if (!showLodgingCountRow) return { totals, parts };
+    for (const user of filteredUsers) {
+      if (!lodgingGroupIds.has(user.groupId)) continue;
+      for (const col of visibleDayCols) {
+        const st = statusByUserDate.get(`${user.id}|${col.date}`) || '-';
+        if (!LODGING_OVERNIGHT_STATUSES.has(st)) continue;
+        totals.set(col.date, (totals.get(col.date) || 0) + 1);
+        const bucket = parts.get(col.date);
+        if (bucket && st in bucket) {
+          bucket[st as (typeof LODGING_OVERNIGHT_BREAKDOWN_KEYS)[number]] += 1;
+        }
+      }
+    }
+    return { totals, parts };
+  }, [
+    filteredUsers,
+    visibleDayCols,
+    statusByUserDate,
+    showLodgingCountRow,
+    lodgingGroupIds,
+  ]);
 
   const todayKey = useMemo(() => {
     const now = new Date();
@@ -828,7 +986,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </button>
         </div>
       )}
-      <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="mb-2 sm:mb-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <GroupSelector
             groups={groups}
@@ -836,60 +994,61 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             onChange={onGroupChange}
             allowAll
             unprocessedCounts={unprocessedCounts}
+            className="[&_select]:py-1.5 [&_select]:text-xs sm:[&_select]:text-sm"
           />
           {!isAllMode && currentUnprocessed > 0 && (
-            <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-rose-50 border border-rose-200 text-rose-600 text-xs font-black whitespace-nowrap">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-600 text-[11px] font-black whitespace-nowrap">
               未消込 {currentUnprocessed}
             </span>
           )}
           {otherUnprocessedTotal > 0 && (
-            <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs font-black whitespace-nowrap">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-[11px] font-black whitespace-nowrap">
               {isAllMode
                 ? `未消込 合計 ${otherUnprocessedTotal}`
                 : `他グループにも未消込 ${otherUnprocessedTotal}`}
             </span>
           )}
         </div>
-        <p className="text-xs text-slate-500 font-medium">
+        <p className="text-[11px] sm:text-xs text-slate-500 font-medium leading-snug">
           {isAllMode
             ? '全員表示です。グループ名を押すとそのグループに切り替わり、履歴・消込が使えます。'
             : `表示・追加・履歴は、いま選んでいる「${currentGroupName}」だけが対象です。`}
         </p>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-180px)]">
-        <div className="lg:w-44 flex flex-row lg:flex-col gap-2 overflow-x-auto pb-2 lg:pb-0 shrink-0 lg:h-full">
+      <div className="flex flex-col lg:flex-row gap-3 lg:gap-4 h-[calc(100vh-148px)]">
+        <div className="lg:w-44 flex flex-row lg:flex-col gap-1.5 sm:gap-2 overflow-x-auto pb-2 lg:pb-0 shrink-0 lg:h-full">
           <button
             onClick={() => setActiveTab('OVERVIEW')}
-            className={`flex-1 lg:flex-none px-4 py-3 rounded-xl font-bold flex items-center justify-center lg:justify-start space-x-3 transition ${activeTab === 'OVERVIEW' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200 lg:border-none'}`}
+            className={`flex-1 lg:flex-none px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold flex items-center justify-center lg:justify-start space-x-3 transition text-sm ${activeTab === 'OVERVIEW' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200 lg:border-none'}`}
           >
             <i className="fas fa-th-list"></i>
             <span>確認・消込</span>
           </button>
           <button
             onClick={() => setActiveTab('USERS')}
-            className={`flex-1 lg:flex-none px-4 py-3 rounded-xl font-bold flex items-center justify-center lg:justify-start space-x-3 transition ${activeTab === 'USERS' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200 lg:border-none'}`}
+            className={`flex-1 lg:flex-none px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold flex items-center justify-center lg:justify-start space-x-3 transition text-sm ${activeTab === 'USERS' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200 lg:border-none'}`}
           >
             <i className="fas fa-users-cog"></i>
             <span>利用者管理</span>
           </button>
           <button
             onClick={() => setActiveTab('GROUPS')}
-            className={`flex-1 lg:flex-none px-4 py-3 rounded-xl font-bold flex items-center justify-center lg:justify-start space-x-3 transition ${activeTab === 'GROUPS' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200 lg:border-none'}`}
+            className={`flex-1 lg:flex-none px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold flex items-center justify-center lg:justify-start space-x-3 transition text-sm ${activeTab === 'GROUPS' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200 lg:border-none'}`}
           >
             <i className="fas fa-layer-group"></i>
             <span>グループ</span>
           </button>
           <button
             onClick={() => setActiveTab('CONFIG')}
-            className={`flex-1 lg:flex-none px-4 py-3 rounded-xl font-bold flex items-center justify-center lg:justify-start space-x-3 transition ${activeTab === 'CONFIG' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200 lg:border-none'}`}
+            className={`flex-1 lg:flex-none px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold flex items-center justify-center lg:justify-start space-x-3 transition text-sm ${activeTab === 'CONFIG' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200 lg:border-none'}`}
           >
             <i className="fas fa-cog"></i>
             <span>期間・休日</span>
           </button>
           <button
             onClick={() => setActiveTab('LINKS')}
-            className={`flex-1 lg:flex-none px-4 py-3 rounded-xl font-bold flex items-center justify-center lg:justify-start space-x-3 transition ${activeTab === 'LINKS' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200 lg:border-none'}`}
+            className={`flex-1 lg:flex-none px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold flex items-center justify-center lg:justify-start space-x-3 transition text-sm ${activeTab === 'LINKS' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200 lg:border-none'}`}
           >
             <i className="fas fa-link"></i>
             <span>入場URL</span>
@@ -937,7 +1096,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   maxHeight: `calc(100% - ${OVERVIEW_HANDLE_PX + OVERVIEW_PANEL_MIN_PX}px)`,
                 }}
               >
-                <div className="px-3 sm:px-4 py-2.5 sm:py-3 flex flex-wrap sm:flex-nowrap items-center gap-2 border-b border-slate-100 shrink-0 bg-slate-50/50">
+                <div className="px-3 sm:px-4 py-2 sm:py-2 flex flex-wrap sm:flex-nowrap items-center gap-2 border-b border-slate-100 shrink-0 bg-slate-50/50">
                   <h3 className="text-sm sm:text-base font-black text-slate-800 flex items-center gap-2 shrink-0 max-w-full sm:max-w-[40%]">
                     <i className="fas fa-calendar-alt text-indigo-500 shrink-0"></i>
                     <span className="truncate">{currentGroupName}・出勤予定一覧</span>
@@ -972,6 +1131,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </span>
                   )}
                   <div className="flex items-center gap-2 ml-auto shrink-0 flex-wrap justify-end">
+                    {focusedDate && (
+                      <button
+                        type="button"
+                        onClick={() => setFocusedDate(null)}
+                        className="rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-black text-indigo-800 shadow-sm hover:bg-indigo-100 transition"
+                        title="日付の絞り込みを解除して全日を表示"
+                      >
+                        全日表示
+                      </button>
+                    )}
                     <label
                       className={`flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-bold shadow-sm ${
                         canShowFullSeason
@@ -1004,7 +1173,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <button
                           type="button"
                           onClick={() => handleMonthChange(-1)}
-                          className="p-1 hover:text-indigo-600 transition"
+                          disabled={!canGoPrevMonth}
+                          className={`p-1 transition ${
+                            canGoPrevMonth
+                              ? 'hover:text-indigo-600'
+                              : 'cursor-not-allowed opacity-40'
+                          }`}
                           aria-label="前月"
                         >
                           <i className="fas fa-chevron-left"></i>
@@ -1015,7 +1189,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <button
                           type="button"
                           onClick={() => handleMonthChange(1)}
-                          className="p-1 hover:text-indigo-600 transition"
+                          disabled={!canGoNextMonth}
+                          className={`p-1 transition ${
+                            canGoNextMonth
+                              ? 'hover:text-indigo-600'
+                              : 'cursor-not-allowed opacity-40'
+                          }`}
                           aria-label="翌月"
                         >
                           <i className="fas fa-chevron-right"></i>
@@ -1026,8 +1205,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 <div className="flex-grow overflow-auto relative min-h-0">
-                  <table className="w-full text-xs text-left border-separate border-spacing-0">
-                    <thead className="sticky top-0 z-30 bg-slate-50 text-slate-500 font-bold shadow-sm">
+                  <table
+                    className={`text-xs text-left border-separate border-spacing-0 ${
+                      focusedDate ? 'w-max max-w-none' : 'w-full'
+                    }`}
+                  >
+                    <thead
+                      ref={countTipRef}
+                      className="sticky top-0 z-30 bg-slate-50 text-slate-500 font-bold shadow-sm"
+                    >
                       {showFullSeason && monthBands.length > 0 && (
                         <tr>
                           <th
@@ -1068,25 +1254,168 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             )}
                           </>
                         )}
-                        {overviewDayCols.map((col) => {
+                        {visibleDayCols.map((col) => {
                           const dow = new Date(`${col.date}T00:00:00`).getDay();
                           const tone = getDayTone(col.date, holidays);
                           const isTodayCol = col.date === todayKey;
+                          const isFocused = focusedDate === col.date;
                           return (
                             <th
                               key={col.date}
-                              className={`px-1 py-2 text-center min-w-[35px] border-r border-b border-slate-200 last:border-r-0 ${dayToneHeaderClass(tone)} ${
-                                isTodayCol ? 'ring-2 ring-inset ring-indigo-400' : ''
-                              } ${col.isMonthStart && showFullSeason ? 'border-l-2 border-l-slate-300' : ''}`}
+                              scope="col"
+                              className={`px-0.5 py-1 text-center min-w-[35px] border-r border-b border-slate-200 last:border-r-0 ${dayToneHeaderClass(tone)} ${
+                                isFocused || isTodayCol ? 'ring-2 ring-inset ring-indigo-400' : ''
+                              } ${col.isMonthStart && showFullSeason && !focusedDate ? 'border-l-2 border-l-slate-300' : ''}`}
                             >
-                              <div className="text-[9px] opacity-70 font-bold normal-case">
-                                {getDayName(dow)}
-                              </div>
-                              <div className="font-black">{col.day}</div>
+                              <button
+                                type="button"
+                                onClick={() => toggleFocusDate(col.date)}
+                                className="w-full rounded-md px-0.5 py-1 hover:bg-white/50 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                                title={
+                                  isFocused
+                                    ? 'もう一度押すと全日表示に戻ります'
+                                    : 'この日だけ表示（氏名の横で確認しやすくなります）'
+                                }
+                                aria-pressed={isFocused}
+                              >
+                                <div className="text-[9px] opacity-70 font-bold normal-case">
+                                  {getDayName(dow)}
+                                </div>
+                                <div className="font-black">{col.day}</div>
+                              </button>
                             </th>
                           );
                         })}
                       </tr>
+                      <tr>
+                        <th className="px-3 py-1.5 sticky left-0 top-0 bg-slate-50 z-40 border-r border-b border-slate-200 text-left align-middle relative">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setCountTip((t) => (t === 'work' ? null : 'work'))
+                            }
+                            className="inline-flex items-center gap-1 rounded-md px-0.5 py-0.5 text-left hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                            aria-expanded={countTip === 'work'}
+                            title="カウント対象の説明"
+                          >
+                            <span className="block text-[10px] font-black text-slate-700 leading-tight">
+                              出勤人数
+                            </span>
+                            <i className="fas fa-info-circle text-[9px] text-slate-400" aria-hidden />
+                          </button>
+                          {countTip === 'work' && (
+                            <div
+                              role="tooltip"
+                              className="absolute left-0 top-full z-[60] mt-1 w-56 rounded-xl border border-slate-200 bg-white p-3 text-left shadow-lg"
+                            >
+                              <p className="text-[11px] font-black text-slate-800">出勤人数のカウント</p>
+                              <p className="mt-1.5 text-[10px] font-bold leading-relaxed text-slate-600">
+                                含める: 〇 / AM / PM / 〇in / 〇out
+                              </p>
+                              <p className="mt-1 text-[10px] font-medium leading-relaxed text-slate-500">
+                                含めない: × / △ / ×in / ×out / 未入力 など
+                              </p>
+                            </div>
+                          )}
+                        </th>
+                        {isAllMode && (
+                          <th className="px-2 py-1.5 sticky top-0 bg-slate-50 z-30 border-r border-b border-slate-200" />
+                        )}
+                        {visibleDayCols.map((col) => {
+                          const n = dayAttendanceCounts.totals.get(col.date) || 0;
+                          const part = dayAttendanceCounts.parts.get(col.date);
+                          const tip = part
+                            ? WORK_ATTENDANCE_BREAKDOWN_KEYS.map((k) => `${k}:${part[k]}`).join(' ')
+                            : '';
+                          const tone = getDayTone(col.date, holidays);
+                          return (
+                            <th
+                              key={`count-${col.date}`}
+                              title={tip}
+                              className={`px-0.5 py-1.5 text-center border-r border-b border-slate-200 last:border-r-0 ${dayToneHeaderClass(tone)} ${
+                                col.isMonthStart && showFullSeason && !focusedDate ? 'border-l-2 border-l-slate-300' : ''
+                              }`}
+                            >
+                              <span
+                                className={`inline-flex min-w-[1.25rem] items-center justify-center rounded-md px-0.5 text-[11px] font-black tabular-nums ${
+                                  n > 0 ? 'text-slate-800' : 'text-slate-400/50'
+                                }`}
+                              >
+                                {n}
+                              </span>
+                            </th>
+                          );
+                        })}
+                      </tr>
+                      {showLodgingCountRow && (
+                        <tr>
+                          <th className="px-3 py-1.5 sticky left-0 top-0 bg-slate-50 z-40 border-r border-b border-slate-200 text-left align-middle relative">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setCountTip((t) => (t === 'lodge' ? null : 'lodge'))
+                              }
+                              className="inline-flex items-center gap-1 rounded-md px-0.5 py-0.5 text-left hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                              aria-expanded={countTip === 'lodge'}
+                              title="カウント対象の説明"
+                            >
+                              <span className="block text-[10px] font-black text-slate-700 leading-tight">
+                                宿泊人数
+                              </span>
+                              <i className="fas fa-info-circle text-[9px] text-slate-400" aria-hidden />
+                            </button>
+                            {countTip === 'lodge' && (
+                              <div
+                                role="tooltip"
+                                className="absolute left-0 top-full z-[60] mt-1 w-60 rounded-xl border border-slate-200 bg-white p-3 text-left shadow-lg"
+                              >
+                                <p className="text-[11px] font-black text-slate-800">宿泊人数のカウント</p>
+                                <p className="mt-1.5 text-[10px] font-bold leading-relaxed text-slate-600">
+                                  含める: 〇 / AM / PM / 〇in / ×in
+                                </p>
+                                <p className="mt-1 text-[10px] font-medium leading-relaxed text-slate-500">
+                                  含めない: 〇out（退寮日）/ ×out / × / △ / 未入力 など
+                                </p>
+                                <p className="mt-1 text-[10px] font-medium leading-relaxed text-slate-500">
+                                  寮用記号ありのグループの人だけ数えます（「全員」でも同様）。
+                                </p>
+                              </div>
+                            )}
+                          </th>
+                          {isAllMode && (
+                            <th className="px-2 py-1.5 sticky top-0 bg-slate-50 z-30 border-r border-b border-slate-200" />
+                          )}
+                          {visibleDayCols.map((col) => {
+                            const n = dayLodgingCounts.totals.get(col.date) || 0;
+                            const part = dayLodgingCounts.parts.get(col.date);
+                            const tip = part
+                              ? LODGING_OVERNIGHT_BREAKDOWN_KEYS.map(
+                                  (k) => `${k}:${part[k]}`
+                                ).join(' ')
+                              : '';
+                            const tone = getDayTone(col.date, holidays);
+                            return (
+                              <th
+                                key={`lodge-${col.date}`}
+                                title={tip}
+                                className={`px-0.5 py-1.5 text-center border-r border-b border-slate-200 last:border-r-0 ${dayToneHeaderClass(tone)} ${
+                                  col.isMonthStart && showFullSeason && !focusedDate
+                                    ? 'border-l-2 border-l-slate-300'
+                                    : ''
+                                }`}
+                              >
+                                <span
+                                  className={`inline-flex min-w-[1.25rem] items-center justify-center rounded-md px-0.5 text-[11px] font-black tabular-nums ${
+                                    n > 0 ? 'text-slate-800' : 'text-slate-400/50'
+                                  }`}
+                                >
+                                  {n}
+                                </span>
+                              </th>
+                            );
+                          })}
+                        </tr>
+                      )}
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {filteredUsers.map(user => (
@@ -1122,14 +1451,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               </button>
                             </td>
                           )}
-                          {overviewDayCols.map((col) => {
+                          {visibleDayCols.map((col) => {
                             const status = getStatus(user.id, col.date);
                             const tone = getDayTone(col.date, holidays);
                             return (
                               <td
                                 key={col.date}
                                 className={`px-0 py-2 text-center border-r border-slate-100 last:border-r-0 ${dayToneCellClass(tone)} ${
-                                  col.isMonthStart && showFullSeason ? 'border-l-2 border-l-slate-200' : ''
+                                  col.isMonthStart && showFullSeason && !focusedDate ? 'border-l-2 border-l-slate-200' : ''
                                 }`}
                               >
                                 <div
@@ -1189,7 +1518,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 className="flex flex-col min-h-0 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
                 style={{ flex: '1 1 0%', minHeight: OVERVIEW_PANEL_MIN_PX }}
               >
-                <div className="px-4 py-3 flex justify-between items-center border-b border-slate-100 shrink-0 bg-slate-50/50 gap-2">
+                <div className="px-4 py-2 flex justify-between items-center border-b border-slate-100 shrink-0 bg-slate-50/50 gap-2">
                   <h3 className="text-base font-black text-slate-800 flex items-center gap-2 min-w-0">
                     <i className="fas fa-history text-indigo-500 shrink-0"></i>
                     <span className="truncate">{currentGroupName}・変更履歴・消込</span>
