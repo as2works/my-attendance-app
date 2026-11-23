@@ -105,18 +105,30 @@ function buildMonthBands(cols: OverviewDayCol[]): { key: string; label: string; 
 }
 
 const OVERVIEW_SPLIT_KEY = 'kss-admin-overview-split';
-/** lg 未満（縦積みレイアウト）用。PC の比率と干渉しない */
-const OVERVIEW_SPLIT_KEY_NARROW = 'kss-admin-overview-split-narrow';
+/** lg 未満用（v2: 履歴最小高を下げて予定を約2.5倍見せる） */
+const OVERVIEW_SPLIT_KEY_NARROW = 'kss-admin-overview-split-narrow-v2';
 /** 予定・履歴パネルそれぞれの最小高さ（px） */
 const OVERVIEW_PANEL_MIN_PX = 140;
+/** スマホ: 履歴はヘッダー程度だけ残し、予定側を優先 */
+const OVERVIEW_PANEL_MIN_NARROW_PX = 56;
 const OVERVIEW_SPLIT_DEFAULT = 50;
-/** スマホ: 予定一覧を広めにして人数行が見えるようにする */
-const OVERVIEW_SPLIT_DEFAULT_NARROW = 72;
+/** スマホ: 予定一覧をほぼ全面に（履歴は最小） */
+const OVERVIEW_SPLIT_DEFAULT_NARROW = 90;
+const OVERVIEW_SPLIT_MAX = 80;
+const OVERVIEW_SPLIT_MAX_NARROW = 95;
 const OVERVIEW_HANDLE_PX = 12;
 const OVERVIEW_NARROW_MQ = '(max-width: 1023px)';
 
 function isNarrowOverviewViewport(): boolean {
   return typeof window !== 'undefined' && window.matchMedia(OVERVIEW_NARROW_MQ).matches;
+}
+
+function overviewPanelMinPx(): number {
+  return isNarrowOverviewViewport() ? OVERVIEW_PANEL_MIN_NARROW_PX : OVERVIEW_PANEL_MIN_PX;
+}
+
+function overviewSplitMaxPercent(): number {
+  return isNarrowOverviewViewport() ? OVERVIEW_SPLIT_MAX_NARROW : OVERVIEW_SPLIT_MAX;
 }
 
 function overviewSplitStorageKey(): string {
@@ -125,12 +137,13 @@ function overviewSplitStorageKey(): string {
 
 function readStoredSplitPercent(): number {
   const narrow = isNarrowOverviewViewport();
+  const max = narrow ? OVERVIEW_SPLIT_MAX_NARROW : OVERVIEW_SPLIT_MAX;
   try {
     const raw = localStorage.getItem(
       narrow ? OVERVIEW_SPLIT_KEY_NARROW : OVERVIEW_SPLIT_KEY
     );
     const v = raw == null ? NaN : Number(raw);
-    if (Number.isFinite(v) && v >= 20 && v <= 80) return v;
+    if (Number.isFinite(v) && v >= 20 && v <= max) return v;
   } catch {
     /* ignore */
   }
@@ -286,14 +299,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const updateOverviewSplitFromClientY = (clientY: number) => {
     const el = overviewSplitRef.current;
     if (!el) return;
+    const panelMin = overviewPanelMinPx();
     const rect = el.getBoundingClientRect();
     const available = rect.height - OVERVIEW_HANDLE_PX;
-    if (available <= OVERVIEW_PANEL_MIN_PX * 2) return;
+    if (available <= panelMin * 2) return;
     let topPx = clientY - rect.top - OVERVIEW_HANDLE_PX / 2;
-    topPx = Math.max(
-      OVERVIEW_PANEL_MIN_PX,
-      Math.min(available - OVERVIEW_PANEL_MIN_PX, topPx)
-    );
+    topPx = Math.max(panelMin, Math.min(available - panelMin, topPx));
     setOverviewTopPercent((topPx / available) * 100);
   };
 
@@ -1116,8 +1127,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 className="flex flex-col min-h-0 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden shrink-0"
                 style={{
                   height: `calc((100% - ${OVERVIEW_HANDLE_PX}px) * ${overviewTopPercent / 100})`,
-                  minHeight: OVERVIEW_PANEL_MIN_PX,
-                  maxHeight: `calc(100% - ${OVERVIEW_HANDLE_PX + OVERVIEW_PANEL_MIN_PX}px)`,
+                  minHeight: overviewPanelMinPx(),
+                  maxHeight: `calc(100% - ${OVERVIEW_HANDLE_PX + overviewPanelMinPx()}px)`,
                 }}
               >
                 <div className="px-3 sm:px-4 py-2 sm:py-2 flex flex-wrap sm:flex-nowrap items-center gap-2 border-b border-slate-100 shrink-0 bg-slate-50/50">
@@ -1268,11 +1279,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <tr>
                         {!(showFullSeason && monthBands.length > 0) && (
                           <>
-                            <th className="px-3 py-3 min-w-[140px] sticky left-0 top-0 bg-slate-50 z-40 border-r border-b border-slate-200">
+                            <th className="px-2 max-lg:py-1.5 lg:px-3 lg:py-3 min-w-[140px] sticky left-0 top-0 bg-slate-50 z-40 border-r border-b border-slate-200">
                               {showEmployeeId ? 'ユーザID / 氏名' : '氏名'}
                             </th>
                             {isAllMode && (
-                              <th className="px-2 py-3 min-w-[72px] sticky top-0 bg-slate-50 z-30 border-r border-b border-slate-200">
+                              <th className="px-2 max-lg:py-1.5 lg:py-3 min-w-[72px] sticky top-0 bg-slate-50 z-30 border-r border-b border-slate-200">
                                 グループ
                               </th>
                             )}
@@ -1444,7 +1455,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <tbody className="divide-y divide-slate-100">
                       {filteredUsers.map(user => (
                         <tr key={user.id} className="hover:bg-slate-50 transition group">
-                          <td className="px-3 py-3 font-bold text-slate-700 sticky left-0 bg-white z-10 border-r border-slate-200 shadow-[1px_0_0_rgba(0,0,0,0.1)]">
+                          <td className="px-2 max-lg:py-1 lg:px-3 lg:py-3 font-bold text-slate-700 sticky left-0 bg-white z-10 border-r border-slate-200 shadow-[1px_0_0_rgba(0,0,0,0.1)]">
                             <div className="flex items-center gap-1.5 min-w-0">
                               <div className="min-w-0">
                                 {showEmployeeId && user.employeeId ? (
@@ -1452,7 +1463,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     {user.employeeId}
                                   </div>
                                 ) : null}
-                                <div className="truncate">{user.name}</div>
+                                <div className="truncate text-sm lg:text-base leading-tight">{user.name}</div>
                               </div>
                               <UserNoteButton
                                 hasNote={hasUserNote(user.note)}
@@ -1461,7 +1472,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </div>
                           </td>
                           {isAllMode && (
-                            <td className="px-2 py-3 border-r border-slate-100 align-middle">
+                            <td className="px-2 max-lg:py-1 lg:py-3 border-r border-slate-100 align-middle">
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -1481,12 +1492,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             return (
                               <td
                                 key={col.date}
-                                className={`px-0 py-2 text-center border-r border-slate-100 last:border-r-0 ${dayToneCellClass(tone)} ${
+                                className={`px-0 max-lg:py-0.5 lg:py-2 text-center border-r border-slate-100 last:border-r-0 ${dayToneCellClass(tone)} ${
                                   col.isMonthStart && showFullSeason && !focusedDate ? 'border-l-2 border-l-slate-200' : ''
                                 }`}
                               >
                                 <div
-                                  className={`mx-auto flex h-6 min-w-[1.5rem] items-center justify-center rounded-md border px-0.5 font-black ${
+                                  className={`mx-auto flex h-5 lg:h-6 min-w-[1.5rem] items-center justify-center rounded-md border px-0.5 font-black ${
                                     status.length > 2 ? 'text-[8px] tracking-tight' : 'text-[10px]'
                                   } ${statusColorClass(status)}`}
                                 >
@@ -1517,7 +1528,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 aria-orientation="horizontal"
                 aria-label="予定一覧と履歴の高さを変更"
                 aria-valuemin={20}
-                aria-valuemax={80}
+                aria-valuemax={overviewSplitMaxPercent()}
                 aria-valuenow={Math.round(overviewTopPercent)}
                 onPointerDown={(e) => {
                   e.preventDefault();
@@ -1540,7 +1551,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <section
                 className="flex flex-col min-h-0 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
-                style={{ flex: '1 1 0%', minHeight: OVERVIEW_PANEL_MIN_PX }}
+                style={{ flex: '1 1 0%', minHeight: overviewPanelMinPx() }}
               >
                 <div className="px-4 py-2 flex justify-between items-center border-b border-slate-100 shrink-0 bg-slate-50/50 gap-2">
                   <h3 className="text-base font-black text-slate-800 flex items-center gap-2 min-w-0">
