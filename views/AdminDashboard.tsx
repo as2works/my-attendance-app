@@ -105,20 +105,36 @@ function buildMonthBands(cols: OverviewDayCol[]): { key: string; label: string; 
 }
 
 const OVERVIEW_SPLIT_KEY = 'kss-admin-overview-split';
+/** lg 未満（縦積みレイアウト）用。PC の比率と干渉しない */
+const OVERVIEW_SPLIT_KEY_NARROW = 'kss-admin-overview-split-narrow';
 /** 予定・履歴パネルそれぞれの最小高さ（px） */
 const OVERVIEW_PANEL_MIN_PX = 140;
 const OVERVIEW_SPLIT_DEFAULT = 50;
+/** スマホ: 予定一覧を広めにして人数行が見えるようにする */
+const OVERVIEW_SPLIT_DEFAULT_NARROW = 72;
 const OVERVIEW_HANDLE_PX = 12;
+const OVERVIEW_NARROW_MQ = '(max-width: 1023px)';
+
+function isNarrowOverviewViewport(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia(OVERVIEW_NARROW_MQ).matches;
+}
+
+function overviewSplitStorageKey(): string {
+  return isNarrowOverviewViewport() ? OVERVIEW_SPLIT_KEY_NARROW : OVERVIEW_SPLIT_KEY;
+}
 
 function readStoredSplitPercent(): number {
+  const narrow = isNarrowOverviewViewport();
   try {
-    const raw = localStorage.getItem(OVERVIEW_SPLIT_KEY);
+    const raw = localStorage.getItem(
+      narrow ? OVERVIEW_SPLIT_KEY_NARROW : OVERVIEW_SPLIT_KEY
+    );
     const v = raw == null ? NaN : Number(raw);
     if (Number.isFinite(v) && v >= 20 && v <= 80) return v;
   } catch {
     /* ignore */
   }
-  return OVERVIEW_SPLIT_DEFAULT;
+  return narrow ? OVERVIEW_SPLIT_DEFAULT_NARROW : OVERVIEW_SPLIT_DEFAULT;
 }
 
 type RefreshScope = {
@@ -286,7 +302,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     overviewDraggingRef.current = false;
     try {
       localStorage.setItem(
-        OVERVIEW_SPLIT_KEY,
+        overviewSplitStorageKey(),
         String(Math.round(overviewTopPercentRef.current * 10) / 10)
       );
     } catch {
@@ -335,6 +351,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setNewUserGroupId(groups[0].id);
     }
   }, [groups, groupId, newUserGroupId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia(OVERVIEW_NARROW_MQ);
+    const apply = () => setOverviewTopPercent(readStoredSplitPercent());
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
 
   const refreshUnprocessedCounts = async () => {
     try {
