@@ -22,6 +22,7 @@ import {
   isAllGroupsSelection,
   userMatchesQuery,
   normalizeEmployeeId,
+  sortUsersForAllGroupsView,
 } from '../types';
 import { statusColorClass } from '../constants';
 import {
@@ -401,6 +402,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         groupUsers = await db.getUsers(allGroups ? undefined : groupId, {
           allGroups,
         });
+        if (allGroups) groupUsers = sortUsersForAllGroupsView(groupUsers);
         if (seq !== refreshSeqRef.current) return;
         setUsers(groupUsers);
       }

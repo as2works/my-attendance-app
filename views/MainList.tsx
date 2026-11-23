@@ -16,6 +16,7 @@ import {
   adminGroupSelectionLabel,
   isAllGroupsSelection,
   userMatchesQuery,
+  sortUsersForAllGroupsView,
 } from '../types';
 import {
   STATUS_COLORS,
@@ -117,9 +118,10 @@ const MainList: React.FC<MainListProps> = ({
       setIsLoading(true);
       try {
         const allGroups = isAdmin && isAllGroupsSelection(groupId);
-        const groupUsers = await db.getUsers(allGroups ? undefined : groupId, {
+        let groupUsers = await db.getUsers(allGroups ? undefined : groupId, {
           allGroups,
         });
+        if (allGroups) groupUsers = sortUsersForAllGroupsView(groupUsers);
         const groupSchedules = await db.getSchedulesForMonth(
           groupUsers.map((u) => u.id),
           currentYear,

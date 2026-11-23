@@ -75,6 +75,28 @@ export function normalizeEmployeeId(value?: string | null): string {
   return (value || '').trim();
 }
 
+/**
+ * 管理者「全員」表示用の並び。
+ * ユーザIDあり → ID 昇順（数値っぽい文字列は自然順）、なし → 取得時の順（グループ内 order）のまま後ろへ。
+ */
+export function sortUsersForAllGroupsView(users: User[]): User[] {
+  const withId: User[] = [];
+  const withoutId: User[] = [];
+  for (const u of users) {
+    if (normalizeEmployeeId(u.employeeId)) withId.push(u);
+    else withoutId.push(u);
+  }
+  withId.sort(
+    (a, b) =>
+      normalizeEmployeeId(a.employeeId).localeCompare(
+        normalizeEmployeeId(b.employeeId),
+        'ja',
+        { numeric: true, sensitivity: 'base' }
+      ) || a.name.localeCompare(b.name, 'ja')
+  );
+  return withId.length === users.length ? withId : [...withId, ...withoutId];
+}
+
 /** 氏名またはユーザIDの部分一致 */
 export function userMatchesQuery(
   user: Pick<User, 'name' | 'employeeId'>,
