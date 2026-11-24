@@ -6,6 +6,7 @@ import GeneralManualList from './GeneralManualList';
 import GeneralManualNote from './GeneralManualNote';
 import GeneralManualOpen from './GeneralManualOpen';
 import GeneralManualRegister from './GeneralManualRegister';
+import GeneralManualRegisterLodging from './GeneralManualRegisterLodging';
 
 const GeneralManual: React.FC = () => {
   const [slug, setSlug] = useState<GeneralManualSlug>(() => getGeneralManualSlug());
@@ -19,6 +20,8 @@ const GeneralManual: React.FC = () => {
   switch (slug) {
     case 'register':
       return <GeneralManualRegister />;
+    case 'register-lodging':
+      return <GeneralManualRegisterLodging />;
     case 'open':
       return <GeneralManualOpen />;
     case 'list':

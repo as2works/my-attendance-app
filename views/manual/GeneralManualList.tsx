@@ -92,10 +92,14 @@ const GeneralManualList: React.FC = () => (
             寮の人向け（宿泊チェックがあるグループだけ）
           </p>
           <p className="mt-2 text-sm font-medium leading-relaxed text-slate-700">
-            出勤記号（〇×△など）とは別に、泊まる日は「宿泊」にチェックします。一覧では黄色いセルになり、入寮・退寮の境目は 〇in／〇out のように見えることがあります。
-          </p>
-          <p className="mt-3 text-sm font-bold leading-relaxed text-slate-800">
-            午前だけ退寮など細かいケースは、記号ではなく備考欄に書いてください。
+            宿泊ONの日は黄色いマスになり、入寮・退寮の境目は 〇in／〇out のように見えることがあります。入れ方のくわしい手順は
+            <a
+              href={generalManualHref('register-lodging')}
+              className="mx-1 font-bold text-teal-700 underline decoration-teal-300 underline-offset-2"
+            >
+              予定の入れ方（寮版）
+            </a>
+            を見てください。
           </p>
         </div>
       </StepCard>

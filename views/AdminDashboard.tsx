@@ -1502,8 +1502,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 }`}
                               >
                                 <div
-                                  className={`mx-auto flex h-5 lg:h-6 min-w-[1.5rem] items-center justify-center rounded-md border px-0.5 font-black ${
-                                    colorKey.length > 2 ? 'text-[8px] tracking-tight' : 'text-[10px]'
+                                  className={`mx-auto flex min-w-[1.5rem] items-center justify-center rounded-md border px-0.5 font-black leading-none text-center ${
+                                    glyph.includes(' ')
+                                      ? 'min-h-5 lg:min-h-6 h-auto py-0.5 text-[8px] tracking-tight'
+                                      : colorKey.length > 2
+                                        ? 'h-5 lg:h-6 text-[8px] tracking-tight'
+                                        : 'h-5 lg:h-6 text-[10px]'
                                   } ${statusColorClass(colorKey)}`}
                                 >
                                   {glyph}

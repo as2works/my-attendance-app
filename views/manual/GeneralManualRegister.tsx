@@ -117,12 +117,12 @@ const GeneralManualRegister: React.FC = () => (
               「未入力」を押すと、まだ決めていない状態に戻ります。
             </p>
             <p className="mt-3 text-sm font-medium leading-relaxed text-slate-500">
-              寮のグループでは、右端に「宿泊」チェックが付きます。泊まる日（入寮日も含む）にチェックしてください。くわしくは
+              寮のグループの人は、宿泊チェックなど手順が増えます。専用の
               <a
-                href={generalManualHref('list')}
+                href={generalManualHref('register-lodging')}
                 className="mx-1 font-bold text-teal-700 underline decoration-teal-300 underline-offset-2"
               >
-                一覧の見方
+                予定の入れ方（寮版）
               </a>
               を見てください。
             </p>

@@ -193,7 +193,7 @@ export const MainListScreenMock: React.FC<{
 export const EditScheduleScreenMock: React.FC<{
   highlightNote?: boolean;
   highlightSave?: boolean;
-  pick?: { date: string; status: string; tone?: string }[];
+  pick?: { date: string; status: string; tone?: string; lodging?: boolean }[];
 }> = ({
   highlightNote = false,
   highlightSave = false,
@@ -308,12 +308,18 @@ export const EditScheduleScreenMock: React.FC<{
               </div>
               <span
                 className={`flex flex-col items-center justify-center gap-0.5 rounded-lg border-2 px-0.5 py-1 text-[8px] font-black ${
-                  row.status === '〇' || row.status === '×'
+                  row.lodging
                     ? 'border-yellow-300 bg-yellow-100/75 text-yellow-900'
                     : 'border-slate-100 bg-white text-slate-300'
                 }`}
               >
-                <span className="h-3 w-3 rounded border border-current" />
+                <span
+                  className={`flex h-3 w-3 items-center justify-center rounded border ${
+                    row.lodging ? 'border-yellow-700 bg-yellow-600 text-white' : 'border-current'
+                  }`}
+                >
+                  {row.lodging ? <i className="fas fa-check text-[6px]" /> : null}
+                </span>
                 宿泊
               </span>
             </div>

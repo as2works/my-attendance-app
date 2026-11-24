@@ -14,7 +14,14 @@ export type ManualNavPage = {
   section?: string;
 };
 
-export type GeneralManualSlug = 'index' | 'register' | 'open' | 'list' | 'note' | 'faq';
+export type GeneralManualSlug =
+  | 'index'
+  | 'register'
+  | 'register-lodging'
+  | 'open'
+  | 'list'
+  | 'note'
+  | 'faq';
 
 export const GENERAL_MANUAL_PAGES: ManualNavPage[] = [
   {
@@ -31,6 +38,15 @@ export const GENERAL_MANUAL_PAGES: ManualNavPage[] = [
     title: '予定の入れ方',
     short: '予定を入れる',
     desc: 'いちばん大事。自分の名前を開き、〇や×を選んで「登録する」を押します',
+    inToc: true,
+    emphasize: true,
+  },
+  {
+    slug: 'register-lodging',
+    path: `${GENERAL_MANUAL_PATH}/register-lodging`,
+    title: '予定の入れ方（寮版）',
+    short: '予定を入れる（寮）',
+    desc: '寮グループ向け。出勤の〇×に加え、宿泊チェックの入れ方と一覧の黄色いセルの見方',
     inToc: true,
     emphasize: true,
   },

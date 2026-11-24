@@ -16,7 +16,31 @@ const items: Array<{ q: string; a: React.ReactNode }> = [
         >
           予定の入れ方
         </a>
-        を見てください。
+        （寮の人は
+        <a
+          href={generalManualHref('register-lodging')}
+          className="mx-1 font-bold text-teal-700 underline decoration-teal-300 underline-offset-2"
+        >
+          寮版
+        </a>
+        ）を見てください。
+      </>
+    ),
+  },
+  {
+    q: '寮なのに「宿泊」が出ない／黄色いマスの意味が分からない',
+    a: (
+      <>
+        宿泊チェックは、寮グループ（管理者が「宿泊チェックあり」にしたグループ）だけに出ます。
+        <br />
+        黄色いマスは「その日泊まる」印です。入れ方は
+        <a
+          href={generalManualHref('register-lodging')}
+          className="mx-1 font-bold text-teal-700 underline decoration-teal-300 underline-offset-2"
+        >
+          予定の入れ方（寮版）
+        </a>
+        にまとめてあります。
       </>
     ),
   },

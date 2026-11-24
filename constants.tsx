@@ -42,12 +42,16 @@ export function isStatusAllowed(
   return WORK_INPUT_STATUSES.includes(status);
 }
 
-/** 一覧セル用。スマホは行高を抑える。3文字記号は少し小さく・広めに */
+/** 一覧セル用。スマホは行高を抑える。3文字記号は少し小さく。AM out 等の折り返しは行間を詰める */
 export function statusGlyphClass(status: string): string {
   const long = status.length > 2;
+  const spaced = status.includes(' ');
+  if (spaced) {
+    return 'w-7 min-h-6 h-auto sm:w-9 sm:min-h-8 py-0.5 px-0.5 text-[8px] sm:text-[10px] tracking-tight leading-none text-center';
+  }
   return long
-    ? 'w-7 h-6 sm:w-9 sm:h-8 text-[8px] sm:text-[10px] tracking-tight'
-    : 'w-6 h-6 sm:w-8 sm:h-8 text-[10px] sm:text-xs';
+    ? 'w-7 h-6 sm:w-9 sm:h-8 text-[8px] sm:text-[10px] tracking-tight leading-none'
+    : 'w-6 h-6 sm:w-8 sm:h-8 text-[10px] sm:text-xs leading-none';
 }
 
 /** 表示用。試験データの旧 in/out も色だけ落とさない */
