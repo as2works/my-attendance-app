@@ -224,6 +224,15 @@ function toDateKey(year: number, monthIndex: number, day: number): string {
   return `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
+/** クライアント services/lodgingSchedule.prevDateKey と同期 */
+function prevDateKey(dateKey: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (!m) return null;
+  const dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  dt.setDate(dt.getDate() - 1);
+  return toDateKey(dt.getFullYear(), dt.getMonth(), dt.getDate());
+}
+
 /**
  * クライアント services/calendarTone.getSeasonDisplayPeriod と同期。
  * シーズン内 → 当月 / 期間前 → 開始月 / 期間後 → 終了月
@@ -361,7 +370,9 @@ async function listSchedulesForUserIdsInMonth(
   legacyOvernightByUser?: Set<string> | boolean
 ): Promise<ScheduleRow[]> {
   const { start, end } = monthBounds(year, month);
-  return listSchedulesForUserIdsInRange(userIds, start, end, legacyOvernightByUser);
+  // 月初の in/out 判定用に前月末日を含める（表示列は当月のみ）
+  const from = prevDateKey(start) ?? start;
+  return listSchedulesForUserIdsInRange(userIds, from, end, legacyOvernightByUser);
 }
 
 async function resolveSession(token?: string | null): Promise<Session> {

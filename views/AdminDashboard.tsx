@@ -27,6 +27,7 @@ import {
 import { statusColorClass, LODGING_OVERNIGHT_CELL_CLASS } from '../constants';
 import {
   displayScheduleGlyph,
+  extendRangeWithPrevDay,
   lodgingEdge,
   prevDateKey,
 } from '../services/lodgingSchedule';
@@ -423,13 +424,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         parallel.push(
           (ids.length
             ? useSeasonRange
-              ? db.getSchedulesForRange(
-                  ids,
-                  seasonStart!,
-                  seasonEnd!,
-                  allGroups ? undefined : groupId,
-                  { allGroups }
-                )
+              ? (() => {
+                  const { dateFrom, dateTo } = extendRangeWithPrevDay(
+                    seasonStart!,
+                    seasonEnd!
+                  );
+                  return db.getSchedulesForRange(
+                    ids,
+                    dateFrom,
+                    dateTo,
+                    allGroups ? undefined : groupId,
+                    { allGroups }
+                  );
+                })()
               : db.getSchedulesForMonth(ids, year, month, allGroups ? undefined : groupId, {
                   allGroups,
                 })

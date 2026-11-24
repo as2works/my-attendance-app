@@ -238,6 +238,33 @@ const MainList: React.FC<MainListProps> = ({
     });
   };
 
+  /** 寮グループ表示時。画面上の人・日付だけ、宿泊ONを日別に数える */
+  const showLodgingCountRow = showLodgingLegend;
+  const dayLodgingCounts = useMemo(() => {
+    const totals = new Map<number, number>();
+    for (const day of days) {
+      totals.set(day, 0);
+    }
+    if (!showLodgingCountRow) return totals;
+    for (const user of filteredUsers) {
+      if (!lodgingGroupIds.has(user.groupId)) continue;
+      for (const day of days) {
+        const dateStr = toDateKey(currentYear, currentMonth, day);
+        if (!getDaySchedule(user.id, dateStr, user.groupId).lodgingOvernight) continue;
+        totals.set(day, (totals.get(day) || 0) + 1);
+      }
+    }
+    return totals;
+  }, [
+    days,
+    filteredUsers,
+    lodgingGroupIds,
+    showLodgingCountRow,
+    currentYear,
+    currentMonth,
+    scheduleByUserDate,
+  ]);
+
   const handleMonthChange = (offset: number) => {
     const newDate = new Date(currentYear, currentMonth + offset, 1);
     const y = newDate.getFullYear();
@@ -369,6 +396,41 @@ const MainList: React.FC<MainListProps> = ({
                   );
                 })}
               </tr>
+              {showLodgingCountRow && (
+                <tr>
+                  <th
+                    className="px-1.5 sm:px-3 py-1 sm:py-1.5 w-[108px] min-w-[108px] max-w-[108px] sm:w-[148px] sm:min-w-[148px] sm:max-w-[148px] sticky top-10 sm:top-12 left-0 bg-slate-50 z-30 border-b border-r border-slate-200 shadow-[2px_0_5px_rgba(0,0,0,0.05)] text-left text-[10px] sm:text-[11px] font-black text-slate-700 normal-case tracking-normal"
+                    title="その日に宿泊チェックがONの人数（入寮日含む）"
+                  >
+                    宿泊人数
+                  </th>
+                  {isAllMode && (
+                    <th className="px-1.5 sm:px-2 py-1 sm:py-1.5 sticky top-10 sm:top-12 z-20 border-b border-r border-slate-100 bg-slate-50" />
+                  )}
+                  {days.map((day) => {
+                    const n = dayLodgingCounts.get(day) || 0;
+                    const tone = getDayTone(
+                      toDateKey(currentYear, currentMonth, day),
+                      config.holidays || []
+                    );
+                    return (
+                      <th
+                        key={`lodge-${day}`}
+                        title={n > 0 ? `宿泊 ${n}人` : '宿泊 0人'}
+                        className={`px-0.5 sm:px-2 py-1 sm:py-1.5 text-center sticky top-10 sm:top-12 z-20 border-b border-r border-slate-100 last:border-r-0 bg-slate-50 normal-case tracking-normal ${dayToneHeaderClass(tone)}`}
+                      >
+                        <span
+                          className={`inline-flex min-w-[1.1rem] items-center justify-center rounded-md px-0.5 text-[11px] sm:text-xs font-black tabular-nums ${
+                            n > 0 ? 'text-slate-800' : 'text-slate-400/50'
+                          }`}
+                        >
+                          {n}
+                        </span>
+                      </th>
+                    );
+                  })}
+                </tr>
+              )}
             </thead>
             <tbody>
               {filteredUsers.map(user => (
@@ -522,7 +584,9 @@ const MainList: React.FC<MainListProps> = ({
             <span
               className={`h-5 w-5 rounded border border-yellow-200 ${LODGING_OVERNIGHT_CELL_CLASS}`}
             />
-            <span className="leading-none">宿泊（入寮日含む。〇in／〇out は前後日から表示）</span>
+            <span className="leading-none">
+              宿泊（入寮日含む。ヘッダー「宿泊人数」はその日の宿泊ON人数。〇in／〇out は前後日から表示）
+            </span>
           </div>
         )}
       </div>

@@ -122,3 +122,14 @@ export function prevDateKey(dateKey: string): string | null {
   const d = String(dt.getDate()).padStart(2, '0');
   return `${y}-${mo}-${d}`;
 }
+
+/**
+ * 日付範囲取得の開始を1日前に広げる。
+ * 先頭日の lodging in/out（前日宿泊→当日未宿泊 = out など）判定用。
+ */
+export function extendRangeWithPrevDay(
+  dateFrom: string,
+  dateTo: string
+): { dateFrom: string; dateTo: string } {
+  return { dateFrom: prevDateKey(dateFrom) ?? dateFrom, dateTo };
+}
