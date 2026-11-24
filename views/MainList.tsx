@@ -584,9 +584,7 @@ const MainList: React.FC<MainListProps> = ({
             <span
               className={`h-5 w-5 rounded border border-yellow-200 ${LODGING_OVERNIGHT_CELL_CLASS}`}
             />
-            <span className="leading-none">
-              宿泊（入寮日含む。ヘッダー「宿泊人数」はその日の宿泊ON人数。〇in／〇out は前後日から表示）
-            </span>
+            <span className="leading-none">宿泊日</span>
           </div>
         )}
       </div>

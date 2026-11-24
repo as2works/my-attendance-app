@@ -17,7 +17,7 @@ export const STATUS_COLORS: Record<AttendanceStatus, string> = {
 
 export const STATUS_LABELS: Record<AttendanceStatus, string> = {
   '〇': '出勤可能',
-  '×': '休み希望',
+  '×': '休み',
   '△': '未定',
   'AM': 'AMのみ',
   'PM': 'PMのみ',

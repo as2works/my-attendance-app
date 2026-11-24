@@ -1049,54 +1049,54 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </div>
 
       <div className="flex flex-col lg:flex-row gap-3 lg:gap-4 h-[calc(100vh-148px)]">
-        <div className="lg:w-44 flex flex-row lg:flex-col gap-1.5 sm:gap-2 overflow-x-auto pb-2 lg:pb-0 shrink-0 lg:h-full">
+        <div className="lg:w-44 flex flex-row lg:flex-col gap-1 lg:gap-2 overflow-x-auto pb-1.5 lg:pb-0 shrink-0 lg:h-full">
           <button
             onClick={() => setActiveTab('OVERVIEW')}
-            className={`flex-1 lg:flex-none px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold flex items-center justify-center lg:justify-start space-x-3 transition text-sm ${activeTab === 'OVERVIEW' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200 lg:border-none'}`}
+            className={`shrink-0 lg:shrink flex-none px-2 lg:px-4 py-1.5 lg:py-2.5 rounded-lg lg:rounded-xl font-bold flex items-center justify-center lg:justify-start gap-1.5 lg:gap-3 transition text-[11px] lg:text-sm whitespace-nowrap ${activeTab === 'OVERVIEW' ? 'bg-indigo-600 text-white shadow-md lg:shadow-lg shadow-indigo-100' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200 lg:border-none'}`}
           >
-            <i className="fas fa-th-list"></i>
+            <i className="fas fa-th-list text-[10px] lg:text-sm"></i>
             <span>確認・消込</span>
           </button>
           <button
             onClick={() => setActiveTab('USERS')}
-            className={`flex-1 lg:flex-none px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold flex items-center justify-center lg:justify-start space-x-3 transition text-sm ${activeTab === 'USERS' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200 lg:border-none'}`}
+            className={`shrink-0 lg:shrink flex-none px-2 lg:px-4 py-1.5 lg:py-2.5 rounded-lg lg:rounded-xl font-bold flex items-center justify-center lg:justify-start gap-1.5 lg:gap-3 transition text-[11px] lg:text-sm whitespace-nowrap ${activeTab === 'USERS' ? 'bg-indigo-600 text-white shadow-md lg:shadow-lg shadow-indigo-100' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200 lg:border-none'}`}
           >
-            <i className="fas fa-users-cog"></i>
+            <i className="fas fa-users-cog text-[10px] lg:text-sm"></i>
             <span>利用者管理</span>
           </button>
           <button
             onClick={() => setActiveTab('GROUPS')}
-            className={`flex-1 lg:flex-none px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold flex items-center justify-center lg:justify-start space-x-3 transition text-sm ${activeTab === 'GROUPS' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200 lg:border-none'}`}
+            className={`shrink-0 lg:shrink flex-none px-2 lg:px-4 py-1.5 lg:py-2.5 rounded-lg lg:rounded-xl font-bold flex items-center justify-center lg:justify-start gap-1.5 lg:gap-3 transition text-[11px] lg:text-sm whitespace-nowrap ${activeTab === 'GROUPS' ? 'bg-indigo-600 text-white shadow-md lg:shadow-lg shadow-indigo-100' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200 lg:border-none'}`}
           >
-            <i className="fas fa-layer-group"></i>
+            <i className="fas fa-layer-group text-[10px] lg:text-sm"></i>
             <span>グループ</span>
           </button>
           <button
             onClick={() => setActiveTab('CONFIG')}
-            className={`flex-1 lg:flex-none px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold flex items-center justify-center lg:justify-start space-x-3 transition text-sm ${activeTab === 'CONFIG' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200 lg:border-none'}`}
+            className={`shrink-0 lg:shrink flex-none px-2 lg:px-4 py-1.5 lg:py-2.5 rounded-lg lg:rounded-xl font-bold flex items-center justify-center lg:justify-start gap-1.5 lg:gap-3 transition text-[11px] lg:text-sm whitespace-nowrap ${activeTab === 'CONFIG' ? 'bg-indigo-600 text-white shadow-md lg:shadow-lg shadow-indigo-100' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200 lg:border-none'}`}
           >
-            <i className="fas fa-cog"></i>
+            <i className="fas fa-cog text-[10px] lg:text-sm"></i>
             <span>期間・休日</span>
           </button>
           <button
             onClick={() => setActiveTab('LINKS')}
-            className={`flex-1 lg:flex-none px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold flex items-center justify-center lg:justify-start space-x-3 transition text-sm ${activeTab === 'LINKS' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200 lg:border-none'}`}
+            className={`shrink-0 lg:shrink flex-none px-2 lg:px-4 py-1.5 lg:py-2.5 rounded-lg lg:rounded-xl font-bold flex items-center justify-center lg:justify-start gap-1.5 lg:gap-3 transition text-[11px] lg:text-sm whitespace-nowrap ${activeTab === 'LINKS' ? 'bg-indigo-600 text-white shadow-md lg:shadow-lg shadow-indigo-100' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200 lg:border-none'}`}
           >
-            <i className="fas fa-link"></i>
+            <i className="fas fa-link text-[10px] lg:text-sm"></i>
             <span>入場URL</span>
           </button>
-          <div className="flex-1 lg:flex-none lg:mt-auto flex flex-col gap-1.5 min-w-[8.5rem]">
+          <div className="shrink-0 lg:shrink flex-none lg:flex-none lg:mt-auto flex flex-col gap-1 lg:gap-1.5 lg:min-w-[8.5rem]">
             <button
               type="button"
               onClick={() => void handleExportCsv()}
               disabled={exportBusy || !config}
               title="全グループの出勤予定をCSVでダウンロード"
-              className="w-full px-4 py-3 rounded-xl font-bold flex items-center justify-center lg:justify-start space-x-3 transition bg-slate-800 text-white hover:bg-slate-900 disabled:bg-slate-400 shadow-md"
+              className="w-full px-2 lg:px-4 py-1.5 lg:py-3 rounded-lg lg:rounded-xl font-bold flex items-center justify-center lg:justify-start gap-1.5 lg:gap-3 transition text-[11px] lg:text-sm whitespace-nowrap bg-slate-800 text-white hover:bg-slate-900 disabled:bg-slate-400 shadow-sm lg:shadow-md"
             >
               {exportBusy ? (
-                <i className="fas fa-sync fa-spin"></i>
+                <i className="fas fa-sync fa-spin text-[10px] lg:text-sm"></i>
               ) : (
-                <i className="fas fa-file-csv"></i>
+                <i className="fas fa-file-csv text-[10px] lg:text-sm"></i>
               )}
               <span className="text-left leading-tight">
                 {exportBusy ? '作成中…' : 'CSV出力'}
