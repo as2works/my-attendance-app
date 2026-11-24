@@ -12,6 +12,7 @@ import {
   AccessLinkRole,
   Workspace,
   WorkspaceId,
+  AdminGroupSelection,
 } from '../types';
 
 export type BootstrapGeneralResult = {
@@ -29,7 +30,7 @@ export type BootstrapAdminResult = {
   config: SystemConfig;
   groups: Group[];
   workspace: { id: string; name: string; note: string };
-  groupId: GroupId;
+  groupId: AdminGroupSelection;
   users: User[];
   histories: History[];
   schedules: Schedule[];

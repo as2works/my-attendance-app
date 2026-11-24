@@ -6,11 +6,13 @@ import {
   GroupId,
   Group,
   AccessSession,
+  ALL_GROUPS_ID,
   DEFAULT_GROUP_IDS,
   Schedule,
   History,
   AdminGroupSelection,
   isAllGroupsSelection,
+  sortUsersForAllGroupsView,
 } from './types';
 import MainList from './views/MainList';
 import EditSchedule from './views/EditSchedule';
@@ -45,7 +47,7 @@ const App: React.FC = () => {
   const [session, setSession] = useState<AccessSession | null>(null);
   const [workspaceName, setWorkspaceName] = useState('');
   const [selectedGroupId, setSelectedGroupId] = useState<AdminGroupSelection>(
-    DEFAULT_GROUP_IDS.DORM
+    ALL_GROUPS_ID
   );
   const [bootError, setBootError] = useState<string | null>(null);
   const [isBooting, setIsBooting] = useState(() => !isAnyManualPath());
@@ -84,9 +86,11 @@ const App: React.FC = () => {
     setGroups(boot.groups);
     setConfig(boot.config);
     setWorkspaceName(boot.workspace.name);
-    setSelectedGroupId(boot.groupId);
+    setSelectedGroupId(boot.groupId || ALL_GROUPS_ID);
     setAdminInitialData({
-      users: boot.users,
+      users: isAllGroupsSelection(boot.groupId)
+        ? sortUsersForAllGroupsView(boot.users)
+        : boot.users,
       histories: boot.histories,
       schedules: boot.schedules,
       config: boot.config,
@@ -242,7 +246,7 @@ const App: React.FC = () => {
           setWorkspaceName('');
         }
         if (link.role === 'ADMIN') {
-          setSelectedGroupId(fallbackGroupId);
+          setSelectedGroupId(ALL_GROUPS_ID);
           setView('ADMIN');
         } else {
           setSelectedGroupId(link.groupId || fallbackGroupId);

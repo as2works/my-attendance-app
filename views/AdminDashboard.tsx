@@ -279,11 +279,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     () => new Set(groups.filter((g) => g.hasLodgingStatuses).map((g) => g.id)),
     [groups]
   );
-  const showLodgingCountRow = isAllMode
-    ? lodgingGroupIds.size > 0
-    : lodgingGroupIds.has(groupId);
-  /** 寮グループ単独表示のみ。全員表示では宿泊の背景色は付けない */
-  const showLodgingOvernightHighlight = !isAllMode && lodgingGroupIds.has(groupId);
+  /** 寮グループ単独表示のみ。全員表示では宿泊人数行・背景色は出さない */
+  const showLodgingCountRow = !isAllMode && lodgingGroupIds.has(groupId);
+  const showLodgingOvernightHighlight = showLodgingCountRow;
   const holidays = config?.holidays || [];
   const showEmployeeId = config?.showEmployeeId !== false;
   const normalizedQuery = nameQuery.trim().toLocaleLowerCase('ja');
@@ -1407,9 +1405,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 </p>
                                 <p className="mt-1 text-[10px] font-medium leading-relaxed text-slate-500">
                                   退寮日はチェックOFFのため含めません。出勤記号は見ません。
-                                </p>
-                                <p className="mt-1 text-[10px] font-medium leading-relaxed text-slate-500">
-                                  寮用記号ありのグループの人だけ数えます（「全員」でも同様）。
                                 </p>
                               </div>
                             )}

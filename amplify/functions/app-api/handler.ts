@@ -1139,24 +1139,26 @@ export const handler = async (event: { arguments: Args }) => {
         if (!configRow) fail('NOT_FOUND', 'config');
         if (!groups.length) fail('NOT_FOUND', 'no groups');
         const config = mapConfig(configRow, workspaceId);
-        const groupId = groups[0].id;
+        // 管理者パネルの初期表示は全員
+        const groupId = '__all__';
         const { year, month } = getSeasonDisplayPeriod(
           config.seasonStartDate,
           config.seasonEndDate
         );
 
-        const users = await getUsers(session, { groupId });
-        const bootGroup = groups.find((g) => g.id === groupId);
-        const [historiesPage, schedules, unprocessedEntries] = await Promise.all([
-          client.models.History.listHistoriesByGroup(
-            { groupId },
-            { sortDirection: 'DESC', limit: 80 }
-          ),
+        const users = await getUsers(session, { allGroups: true });
+        const lodgingGroupIds = new Set(
+          groups.filter((g) => g.hasLodgingStatuses).map((g) => g.id)
+        );
+        const legacyOvernight = new Set(
+          users.filter((u) => lodgingGroupIds.has(u.groupId)).map((u) => u.id)
+        );
+        const [schedules, unprocessedEntries] = await Promise.all([
           listSchedulesForUserIdsInMonth(
             users.map((u) => u.id),
             year,
             month,
-            !!bootGroup?.hasLodgingStatuses
+            legacyOvernight
           ),
           Promise.all(
             groups.map(async (g) => {
@@ -1168,19 +1170,6 @@ export const handler = async (event: { arguments: Args }) => {
             })
           ),
         ]);
-
-        const histories = historiesPage.data
-          .map((h) => ({
-            id: h.id,
-            userId: h.userId,
-            userName: h.userName,
-            message: h.message,
-            isProcessed: h.isProcessed,
-            createdAt: h.createdAt,
-            groupId: h.groupId || groupId,
-            recordedAt: h.recordedAt ?? h.createdAt,
-          }))
-          .filter((h) => !h.isProcessed);
 
         const unprocessedCounts: Record<string, number> = {};
         for (const [id, count] of unprocessedEntries) {
@@ -1203,7 +1192,8 @@ export const handler = async (event: { arguments: Args }) => {
           },
           groupId,
           users,
-          histories,
+          // 全員表示では履歴パネルを使わない
+          histories: [],
           schedules,
           year,
           month,
