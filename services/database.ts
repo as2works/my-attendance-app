@@ -200,7 +200,7 @@ export const db = {
     userId: string;
     userName: string;
     groupId?: GroupId;
-    updates: Array<{ date: string; status: string }>;
+    updates: Array<{ date: string; status: string; lodgingOvernight?: boolean }>;
     message: string;
     /** true なら履歴を消込済みで作成（新規入力のみ想定） */
     isProcessed?: boolean;

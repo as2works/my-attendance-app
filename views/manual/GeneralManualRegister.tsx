@@ -103,7 +103,7 @@ const GeneralManualRegister: React.FC = () => (
               {[
                 { s: '〇', l: '出られる', c: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
                 { s: '×', l: '休みたい', c: 'bg-slate-200 text-slate-700 border-slate-300' },
-                { s: '△', l: 'まだ未定', c: 'bg-amber-50 text-amber-800 border-amber-100' },
+                { s: '△', l: 'まだ未定', c: 'bg-orange-100 text-orange-800 border-orange-200' },
               ].map((x) => (
                 <div key={x.s} className={`rounded-xl border px-2 py-2.5 text-center ${x.c}`}>
                   <div className="font-display text-lg font-extrabold">{x.s}</div>
@@ -117,8 +117,7 @@ const GeneralManualRegister: React.FC = () => (
               「未入力」を押すと、まだ決めていない状態に戻ります。
             </p>
             <p className="mt-3 text-sm font-medium leading-relaxed text-slate-500">
-              寮のグループでは「〇in」「×in」「〇out」「×out」も出ることがあります。
-              入寮・退寮と、その日の勤務の有無をセットで選びます。くわしくは
+              寮のグループでは、右端に「宿泊」チェックが付きます。泊まる日（入寮日も含む）にチェックしてください。くわしくは
               <a
                 href={generalManualHref('list')}
                 className="mx-1 font-bold text-teal-700 underline decoration-teal-300 underline-offset-2"

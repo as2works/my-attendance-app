@@ -24,7 +24,12 @@ import {
   normalizeEmployeeId,
   sortUsersForAllGroupsView,
 } from '../types';
-import { statusColorClass } from '../constants';
+import { statusColorClass, LODGING_OVERNIGHT_CELL_CLASS } from '../constants';
+import {
+  displayScheduleGlyph,
+  lodgingEdge,
+  prevDateKey,
+} from '../services/lodgingSchedule';
 import {
   toDateKey,
   getDayTone,
@@ -47,26 +52,9 @@ type OverviewDayCol = {
 };
 
 /** 管理者の日別出勤人数に含める記号（一般画面には出さない） */
-const WORK_ATTENDANCE_STATUSES = new Set<AttendanceStatus>([
-  '〇',
-  'AM',
-  'PM',
-  '〇in',
-  '〇out',
-]);
+const WORK_ATTENDANCE_STATUSES = new Set<AttendanceStatus>(['〇', 'AM', 'PM']);
 
-const WORK_ATTENDANCE_BREAKDOWN_KEYS = ['〇', 'AM', 'PM', '〇in', '〇out'] as const;
-
-/** 寮宿泊人数（〇out は退寮日なので含めない） */
-const LODGING_OVERNIGHT_STATUSES = new Set<AttendanceStatus>([
-  '〇',
-  'AM',
-  'PM',
-  '〇in',
-  '×in',
-]);
-
-const LODGING_OVERNIGHT_BREAKDOWN_KEYS = ['〇', 'AM', 'PM', '〇in', '×in'] as const;
+const WORK_ATTENDANCE_BREAKDOWN_KEYS = ['〇', 'AM', 'PM'] as const;
 
 type CountTipKind = 'work' | 'lodge';
 
@@ -293,6 +281,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const showLodgingCountRow = isAllMode
     ? lodgingGroupIds.size > 0
     : lodgingGroupIds.has(groupId);
+  /** 寮グループ単独表示のみ。全員表示では宿泊の背景色は付けない */
+  const showLodgingOvernightHighlight = !isAllMode && lodgingGroupIds.has(groupId);
   const holidays = config?.holidays || [];
   const showEmployeeId = config?.showEmployeeId !== false;
   const normalizedQuery = nameQuery.trim().toLocaleLowerCase('ja');
@@ -557,7 +547,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
       for (const row of schedulePatch) {
         const key = `${row.userId}|${row.date}`;
-        if (row.status === '-') {
+        if (row.status === '-' && !row.lodgingOvernight) {
           map.delete(key);
         } else {
           map.set(key, row);
@@ -902,13 +892,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return map;
   }, [schedules]);
 
+  const lodgingByUserDate = useMemo(() => {
+    const map = new Map<string, boolean>();
+    for (const s of schedules) {
+      map.set(`${s.userId}|${s.date}`, !!s.lodgingOvernight);
+    }
+    return map;
+  }, [schedules]);
+
   /** 画面に出ている人・日付だけ数える（検索／日付絞り込み後）。全員表示も合算 */
   const dayAttendanceCounts = useMemo(() => {
     const totals = new Map<string, number>();
     const parts = new Map<string, Record<(typeof WORK_ATTENDANCE_BREAKDOWN_KEYS)[number], number>>();
     for (const col of visibleDayCols) {
       totals.set(col.date, 0);
-      parts.set(col.date, { '〇': 0, AM: 0, PM: 0, '〇in': 0, '〇out': 0 });
+      parts.set(col.date, { '〇': 0, AM: 0, PM: 0 });
     }
     for (const user of filteredUsers) {
       for (const col of visibleDayCols) {
@@ -924,35 +922,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return { totals, parts };
   }, [filteredUsers, visibleDayCols, statusByUserDate]);
 
-  /** 寮グループの人だけ。〇out は退寮日なので宿泊人数に含めない */
+  /** 寮グループの人だけ。その日の宿泊チェックONを数える（入寮日含む／退寮日はOFF） */
   const dayLodgingCounts = useMemo(() => {
     const totals = new Map<string, number>();
-    const parts = new Map<
-      string,
-      Record<(typeof LODGING_OVERNIGHT_BREAKDOWN_KEYS)[number], number>
-    >();
     for (const col of visibleDayCols) {
       totals.set(col.date, 0);
-      parts.set(col.date, { '〇': 0, AM: 0, PM: 0, '〇in': 0, '×in': 0 });
     }
-    if (!showLodgingCountRow) return { totals, parts };
+    if (!showLodgingCountRow) return { totals };
     for (const user of filteredUsers) {
       if (!lodgingGroupIds.has(user.groupId)) continue;
       for (const col of visibleDayCols) {
-        const st = statusByUserDate.get(`${user.id}|${col.date}`) || '-';
-        if (!LODGING_OVERNIGHT_STATUSES.has(st)) continue;
+        if (!lodgingByUserDate.get(`${user.id}|${col.date}`)) continue;
         totals.set(col.date, (totals.get(col.date) || 0) + 1);
-        const bucket = parts.get(col.date);
-        if (bucket && st in bucket) {
-          bucket[st as (typeof LODGING_OVERNIGHT_BREAKDOWN_KEYS)[number]] += 1;
-        }
       }
     }
-    return { totals, parts };
+    return { totals };
   }, [
     filteredUsers,
     visibleDayCols,
-    statusByUserDate,
+    lodgingByUserDate,
     showLodgingCountRow,
     lodgingGroupIds,
   ]);
@@ -1347,10 +1335,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             >
                               <p className="text-[11px] font-black text-slate-800">出勤人数のカウント</p>
                               <p className="mt-1.5 text-[10px] font-bold leading-relaxed text-slate-600">
-                                含める: 〇 / AM / PM / 〇in / 〇out
+                                含める: 〇 / AM / PM
                               </p>
                               <p className="mt-1 text-[10px] font-medium leading-relaxed text-slate-500">
-                                含めない: × / △ / ×in / ×out / 未入力 など
+                                含めない: × / △ / 未入力。宿泊チェックは見ません。
                               </p>
                             </div>
                           )}
@@ -1408,10 +1396,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               >
                                 <p className="text-[11px] font-black text-slate-800">宿泊人数のカウント</p>
                                 <p className="mt-1.5 text-[10px] font-bold leading-relaxed text-slate-600">
-                                  含める: 〇 / AM / PM / 〇in / ×in
+                                  含める: その日の「宿泊」チェックがONの人（入寮日含む）
                                 </p>
                                 <p className="mt-1 text-[10px] font-medium leading-relaxed text-slate-500">
-                                  含めない: 〇out（退寮日）/ ×out / × / △ / 未入力 など
+                                  退寮日はチェックOFFのため含めません。出勤記号は見ません。
                                 </p>
                                 <p className="mt-1 text-[10px] font-medium leading-relaxed text-slate-500">
                                   寮用記号ありのグループの人だけ数えます（「全員」でも同様）。
@@ -1424,17 +1412,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           )}
                           {visibleDayCols.map((col) => {
                             const n = dayLodgingCounts.totals.get(col.date) || 0;
-                            const part = dayLodgingCounts.parts.get(col.date);
-                            const tip = part
-                              ? LODGING_OVERNIGHT_BREAKDOWN_KEYS.map(
-                                  (k) => `${k}:${part[k]}`
-                                ).join(' ')
-                              : '';
                             const tone = getDayTone(col.date, holidays);
                             return (
                               <th
                                 key={`lodge-${col.date}`}
-                                title={tip}
+                                title={n > 0 ? `宿泊 ${n}人` : '宿泊 0人'}
                                 className={`px-0.5 py-1.5 text-center border-r border-b border-slate-200 last:border-r-0 ${dayToneHeaderClass(tone)} ${
                                   col.isMonthStart && showFullSeason && !focusedDate
                                     ? 'border-l-2 border-l-slate-300'
@@ -1490,20 +1472,41 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           )}
                           {visibleDayCols.map((col) => {
                             const status = getStatus(user.id, col.date);
+                            const overnight = !!lodgingByUserDate.get(`${user.id}|${col.date}`);
+                            /** 寮グループ単独のみ in/out 導出。全員表示は出勤記号のみ */
+                            const showLodgingGlyphs = showLodgingOvernightHighlight;
+                            const prevKey = prevDateKey(col.date);
+                            const prevOvernight = prevKey
+                              ? !!lodgingByUserDate.get(`${user.id}|${prevKey}`)
+                              : false;
+                            const edge = showLodgingGlyphs
+                              ? lodgingEdge(overnight, prevOvernight)
+                              : 'none';
+                            const glyph = showLodgingGlyphs
+                              ? displayScheduleGlyph(status, edge)
+                              : status === '-'
+                                ? ''
+                                : status;
                             const tone = getDayTone(col.date, holidays);
+                            const showOvernightBg = showLodgingGlyphs && overnight;
+                            const colorKey = glyph || status;
                             return (
                               <td
                                 key={col.date}
-                                className={`px-0 max-lg:py-0.5 lg:py-2 text-center border-r border-slate-100 last:border-r-0 ${dayToneCellClass(tone)} ${
+                                className={`px-0 max-lg:py-0.5 lg:py-2 text-center border-r border-slate-100 last:border-r-0 ${
+                                  showOvernightBg
+                                    ? LODGING_OVERNIGHT_CELL_CLASS
+                                    : dayToneCellClass(tone)
+                                } ${
                                   col.isMonthStart && showFullSeason && !focusedDate ? 'border-l-2 border-l-slate-200' : ''
                                 }`}
                               >
                                 <div
                                   className={`mx-auto flex h-5 lg:h-6 min-w-[1.5rem] items-center justify-center rounded-md border px-0.5 font-black ${
-                                    status.length > 2 ? 'text-[8px] tracking-tight' : 'text-[10px]'
-                                  } ${statusColorClass(status)}`}
+                                    colorKey.length > 2 ? 'text-[8px] tracking-tight' : 'text-[10px]'
+                                  } ${statusColorClass(colorKey)}`}
                                 >
-                                  {status === '-' ? '' : status}
+                                  {glyph}
                                 </div>
                               </td>
                             );

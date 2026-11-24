@@ -23,7 +23,7 @@ const schema = a.schema({
     .model({
       id: a.string().required(),
       name: a.string().required(),
-      /** true のとき 〇in/×in/〇out/×out（入寮・退寮）記号を使える */
+      /** true のとき予定編集に宿泊チェックを出し、一覧で宿泊表示する */
       hasLodgingStatuses: a.boolean().default(false),
       order: a.integer().default(0),
       workspaceId: a.id(),
@@ -60,6 +60,8 @@ const schema = a.schema({
       userId: a.id().required(),
       date: a.date().required(),
       status: a.string().required(),
+      /** 寮グループ用。その日に宿泊するか（入退寮の in/out は前後日から導出） */
+      lodgingOvernight: a.boolean(),
     })
     .identifier(['userId', 'date']),
 

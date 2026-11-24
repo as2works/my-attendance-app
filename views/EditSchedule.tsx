@@ -6,8 +6,9 @@ import UserNoteModal from '../components/UserNoteModal';
 import { User, SystemConfig, AttendanceStatus, Group, groupLabel, Schedule } from '../types';
 import { getDayTone, dayToneTextClass, listDatesInSeason } from '../services/calendarTone';
 import { db } from '../services/database';
-import { getStatusOptions, LODGING_STATUS_COLUMNS, STATUS_COLORS } from '../constants';
+import { getStatusOptions, STATUS_COLORS } from '../constants';
 import { buildHistoryMessage, isNewScheduleInput } from '../services/historyMessage';
+import { normalizeScheduleFields } from '../services/lodgingSchedule';
 
 interface EditScheduleProps {
   user: User;
@@ -23,13 +24,23 @@ interface EditScheduleProps {
   onNoteSaved?: (userId: string, note: string) => void;
 }
 
-function schedulesToMap(rows: Schedule[]): Record<string, AttendanceStatus> {
-  const map: Record<string, AttendanceStatus> = {};
+type DayDraft = { status: AttendanceStatus; lodgingOvernight: boolean };
+
+function schedulesToDraftMap(
+  rows: Schedule[],
+  legacyOvernightWork: boolean
+): Record<string, DayDraft> {
+  const map: Record<string, DayDraft> = {};
   for (const s of rows) {
-    map[s.date] = s.status as AttendanceStatus;
+    const n = normalizeScheduleFields(s.status, s.lodgingOvernight, {
+      legacyOvernightWork,
+    });
+    map[s.date] = { status: n.status, lodgingOvernight: n.lodgingOvernight };
   }
   return map;
 }
+
+const emptyDay = (): DayDraft => ({ status: '-', lodgingOvernight: false });
 
 const EditSchedule: React.FC<EditScheduleProps> = ({
   user,
@@ -43,18 +54,23 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
 }) => {
   const currentGroup = groups.find((g) => g.id === user.groupId);
   const currentGroupName = groupLabel(groups, user.groupId);
+  const hasLodging = !!currentGroup?.hasLodgingStatuses;
   const initialSeedMap = useMemo(
-    () => schedulesToMap(seedSchedules.filter((s) => s.userId === user.id)),
+    () =>
+      schedulesToDraftMap(
+        seedSchedules.filter((s) => s.userId === user.id),
+        hasLodging
+      ),
     // マウント時シードのみ。親の配列参照変更でリセットしない
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [user.id]
   );
   const hasSeed = Object.keys(initialSeedMap).length > 0;
 
-  const [localSchedules, setLocalSchedules] = useState<Record<string, AttendanceStatus>>(() => ({
+  const [localSchedules, setLocalSchedules] = useState<Record<string, DayDraft>>(() => ({
     ...initialSeedMap,
   }));
-  const [initialSchedules, setInitialSchedules] = useState<Record<string, AttendanceStatus>>(() => ({
+  const [initialSchedules, setInitialSchedules] = useState<Record<string, DayDraft>>(() => ({
     ...initialSeedMap,
   }));
   const [isSaving, setIsSaving] = useState(false);
@@ -66,7 +82,7 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
   const [noteOpen, setNoteOpen] = useState(false);
   /** 未入力（-）・△、および未登録の変更日だけ表示。デフォルトON */
   const [showNeedsInputOnly, setShowNeedsInputOnly] = useState(true);
-  const statusOptions = useMemo(() => getStatusOptions(currentGroup), [currentGroup]);
+  const statusOptions = useMemo(() => getStatusOptions(), []);
   const dirtyDatesRef = useRef<Set<string>>(new Set());
   const seedRef = useRef(initialSeedMap);
   seedRef.current = initialSeedMap;
@@ -89,12 +105,12 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
           dateFrom: config.seasonStartDate,
           dateTo: config.seasonEndDate,
         });
-        const fullMap = schedulesToMap(savedSchedules);
+        const fullMap = schedulesToDraftMap(savedSchedules, hasLodging);
         setInitialSchedules(fullMap);
         setLocalSchedules((prev) => {
           const next = { ...fullMap };
           for (const date of dirtyDatesRef.current) {
-            if (prev[date] !== undefined) next[date] = prev[date];
+            if (prev[date]) next[date] = prev[date];
           }
           return next;
         });
@@ -110,27 +126,41 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
       }
     };
     void fetchData();
-  }, [user.id, user.groupId, config.seasonStartDate, config.seasonEndDate]);
+  }, [user.id, user.groupId, config.seasonStartDate, config.seasonEndDate, hasLodging]);
 
   const datesInRange = useMemo(
     () => listDatesInSeason(config.seasonStartDate, config.seasonEndDate),
     [config.seasonStartDate, config.seasonEndDate]
   );
 
+  const dayOf = (map: Record<string, DayDraft>, date: string): DayDraft =>
+    map[date] || emptyDay();
+
   const visibleDates = useMemo(() => {
     if (!showNeedsInputOnly) return datesInRange;
     return datesInRange.filter((date) => {
-      const current = localSchedules[date] || '-';
-      const initial = initialSchedules[date] || '-';
-      const needsInput = current === '-' || current === '△';
-      const isDirty = current !== initial;
+      const current = dayOf(localSchedules, date);
+      const initial = dayOf(initialSchedules, date);
+      const needsInput = current.status === '-' || current.status === '△';
+      const isDirty =
+        current.status !== initial.status ||
+        current.lodgingOvernight !== initial.lodgingOvernight;
       return needsInput || isDirty;
     });
   }, [datesInRange, showNeedsInputOnly, localSchedules, initialSchedules]);
 
-  const handleStatusChange = (date: string, newStatus: AttendanceStatus) => {
+  const patchDay = (date: string, patch: Partial<DayDraft>) => {
     dirtyDatesRef.current.add(date);
-    setLocalSchedules((prev) => ({ ...prev, [date]: newStatus }));
+    setLocalSchedules((prev) => {
+      const cur = prev[date] || emptyDay();
+      return {
+        ...prev,
+        [date]: {
+          status: patch.status ?? cur.status,
+          lodgingOvernight: patch.lodgingOvernight ?? cur.lodgingOvernight,
+        },
+      };
+    });
   };
 
   const handleSave = async () => {
@@ -138,29 +168,50 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
     setIsSaving(true);
     setSaveNotice(null);
     try {
-      const changes: { date: string; oldStatus: string; newStatus: string }[] = [];
+      const changes: {
+        date: string;
+        oldStatus: string;
+        newStatus: string;
+        oldLodging: boolean;
+        newLodging: boolean;
+      }[] = [];
       datesInRange.forEach((date) => {
-        const oldVal = initialSchedules[date] || '-';
-        const newVal = localSchedules[date] || '-';
-        if (oldVal !== newVal) {
-          changes.push({ date, oldStatus: oldVal, newStatus: newVal });
+        const oldVal = dayOf(initialSchedules, date);
+        const newVal = dayOf(localSchedules, date);
+        if (
+          oldVal.status !== newVal.status ||
+          (hasLodging && oldVal.lodgingOvernight !== newVal.lodgingOvernight)
+        ) {
+          changes.push({
+            date,
+            oldStatus: oldVal.status,
+            newStatus: newVal.status,
+            oldLodging: oldVal.lodgingOvernight,
+            newLodging: newVal.lodgingOvernight,
+          });
         }
       });
 
       if (changes.length > 0) {
-        const changedUpdates = changes.map((c) => ({
+        const changedUpdates: Schedule[] = changes.map((c) => ({
           userId: user.id,
           date: c.date,
           status: c.newStatus as AttendanceStatus,
+          lodgingOvernight: hasLodging ? c.newLodging : false,
         }));
-        const message = buildHistoryMessage(user.name, changes);
+        const message = buildHistoryMessage(user.name, changes, {
+          includeLodging: hasLodging,
+        });
         await db.saveUserSchedules({
           userId: user.id,
           userName: user.name,
           groupId: user.groupId,
-          updates: changes.map((c) => ({ date: c.date, status: c.newStatus })),
+          updates: changedUpdates.map((u) => ({
+            date: u.date,
+            status: u.status,
+            lodgingOvernight: u.lodgingOvernight,
+          })),
           message,
-          // 新規のみはログに残しつつ未消込ノイズにしない
           isProcessed: isNewScheduleInput(changes),
         });
         onSaved?.(changedUpdates);
@@ -178,12 +229,13 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
   const hasChanges = useMemo(() => {
     const keys = new Set([...Object.keys(localSchedules), ...Object.keys(initialSchedules)]);
     for (const date of keys) {
-      const a = localSchedules[date] || '-';
-      const b = initialSchedules[date] || '-';
-      if (a !== b) return true;
+      const a = dayOf(localSchedules, date);
+      const b = dayOf(initialSchedules, date);
+      if (a.status !== b.status) return true;
+      if (hasLodging && a.lodgingOvernight !== b.lodgingOvernight) return true;
     }
     return false;
-  }, [localSchedules, initialSchedules]);
+  }, [localSchedules, initialSchedules, hasLodging]);
 
   const handleBack = () => {
     if (hasChanges) {
@@ -203,14 +255,12 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
     const dow = date.getDay();
     return {
       label: `${month}/${day} (${names[dow]})`,
-      dow
+      dow,
     };
   };
 
-  // 寮: カテゴリ3列。通常: 3列（スマホ）／6列（PC）
-  const hasLodgingOpts = statusOptions.length > 6;
   const optionsWrapClass =
-    'grid grid-cols-3 sm:grid-cols-6 gap-1.5 w-full sm:w-auto sm:gap-2 sm:ml-auto';
+    'grid grid-cols-3 sm:grid-cols-6 gap-1 w-full sm:gap-1.5';
 
   const canEdit = !loadError || hasSeed;
   const blockSave = !hasChanges || isSaving || isLoading || loadError;
@@ -222,7 +272,7 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
       <button
         key={opt}
         type="button"
-        onClick={() => handleStatusChange(dateStr, opt)}
+        onClick={() => patchDay(dateStr, { status: opt })}
         aria-label={isUnset ? '未入力' : opt}
         title={isUnset ? '未入力' : undefined}
         className={`h-9 sm:h-10 w-full rounded-lg flex items-center justify-center border-2 font-black transition-all duration-75 active:scale-90 px-0.5 ${
@@ -248,163 +298,141 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
       onLogout={onLogout}
       showGeneralManualLink
     >
-      <div className="max-w-2xl mx-auto space-y-3 sm:space-y-6">
+      <div className="max-w-3xl mx-auto space-y-3 sm:space-y-6">
         <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-slate-200 sticky top-[44px] sm:top-[52px] z-30 overflow-hidden">
           <div className="px-3 py-2 sm:p-6 flex flex-row justify-between items-center gap-2 sm:gap-4">
             <div className="hidden sm:block">
               <h2 className="text-lg font-bold text-slate-800">各日程の予定を選択</h2>
-              <p className="text-slate-500 text-sm">タップして記号を選んでください</p>
+              <p className="text-xs text-slate-500 mt-1">変更後は必ず「登録する」を押してください</p>
             </div>
-            <div className="flex gap-2 w-full sm:w-auto">
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
               <button
+                type="button"
                 onClick={handleBack}
-                className="flex-1 sm:flex-none px-3 sm:px-6 py-2 sm:py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg sm:rounded-xl transition shadow-sm text-sm sm:text-base"
+                className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50"
               >
                 戻る
               </button>
               <button
-                onClick={handleSave}
+                type="button"
+                onClick={() => void handleSave()}
                 disabled={blockSave}
-                className={`flex-1 sm:flex-none px-3 sm:px-6 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-black transition flex items-center justify-center space-x-1.5 sm:space-x-2 text-sm sm:text-base ${
-                  !blockSave
-                    ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-100'
-                    : 'bg-slate-100 text-slate-300 cursor-not-allowed'
-                }`}
+                className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-black text-sm shadow-md disabled:bg-slate-300 disabled:shadow-none"
               >
-                {isSaving ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-check"></i>}
-                <span>{isSaving ? '保存中...' : '登録する'}</span>
+                {isSaving ? '保存中…' : '登録する'}
               </button>
             </div>
           </div>
-
-          {(isLoading || hasChanges || loadError || saveNotice) && (
-            <div className="px-3 sm:px-6 pb-2 sm:pb-3 space-y-2">
-              {loadError && !hasSeed && (
-                <div className="w-full bg-rose-50 border border-rose-200 text-rose-800 px-2.5 py-1.5 sm:p-3 rounded-lg sm:rounded-xl text-[11px] sm:text-sm font-bold">
-                  予定の読み込みに失敗しました。戻ってもう一度開いてください。
-                </div>
-              )}
-              {isLoading && (
-                <div className="w-full text-slate-400 text-xs sm:text-sm flex items-center space-x-2 px-1 italic">
-                  <i className="fas fa-circle-notch fa-spin"></i>
-                  <span>{hasSeed ? 'シーズン全体を読み込み中...' : '読み込み中...'}</span>
-                </div>
-              )}
-              {!isLoading && hasChanges && (
-                <div className="w-full bg-amber-50 border border-amber-200 text-amber-800 px-2.5 py-1.5 sm:p-3 rounded-lg sm:rounded-xl flex items-center space-x-2 animate-in fade-in slide-in-from-top-2 duration-300">
-                  <i className="fas fa-exclamation-circle text-sm sm:text-lg shrink-0"></i>
-                  <span className="font-bold text-[11px] sm:text-sm leading-snug">未保存です。「登録する」を押してください。</span>
-                </div>
-              )}
-              {saveNotice && (
-                <div className="w-full bg-emerald-50 border border-emerald-200 text-emerald-800 px-2.5 py-1.5 rounded-lg text-[11px] sm:text-sm font-bold">
-                  {saveNotice}
-                </div>
-              )}
-            </div>
+          {saveNotice && (
+            <p className="px-3 pb-2 text-xs font-bold text-emerald-600 sm:px-6">{saveNotice}</p>
           )}
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setNoteOpen(true)}
-          className={`w-full text-left px-3 py-2.5 sm:px-4 sm:py-4 rounded-xl sm:rounded-2xl border-2 transition flex items-center justify-between gap-3 active:scale-[0.99] ${
-            hasUserNote(note)
-              ? 'bg-amber-50 border-amber-200 hover:bg-amber-100'
-              : 'bg-white border-slate-200 hover:bg-slate-50'
-          }`}
-        >
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <i className={`fas fa-sticky-note text-sm sm:text-base ${hasUserNote(note) ? 'text-amber-600' : 'text-slate-400'}`}></i>
-              <span className="font-black text-slate-800 text-sm sm:text-base">
-                {hasUserNote(note) ? '備考を参照・編集' : '備考を書く'}
-              </span>
-            </div>
-            <p className="text-[11px] sm:text-xs text-slate-500 font-medium mt-0.5 sm:mt-1 truncate">
-              {hasUserNote(note)
-                ? note.trim()
-                : '記号で表せない連絡（残業不可・鍵など）があればここへ'}
+          {loadError && (
+            <p className="px-3 pb-2 text-xs font-bold text-rose-600 sm:px-6">
+              予定の取得に失敗しました。表示中の内容で編集はできますが、保存前に再読み込みを試してください。
             </p>
+          )}
+          <div className="px-3 pb-2 sm:px-6 sm:pb-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
+            <button
+              type="button"
+              onClick={() => setNoteOpen(true)}
+              className="px-3 py-1.5 rounded-lg border border-indigo-100 bg-indigo-50 text-indigo-700 text-xs font-bold"
+            >
+              {hasUserNote(note) ? '備考を編集' : '備考を書く'}
+            </button>
+            <label className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer ml-auto">
+              <input
+                type="checkbox"
+                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-200"
+                checked={showNeedsInputOnly}
+                onChange={(e) => setShowNeedsInputOnly(e.target.checked)}
+              />
+              表示切替（未入力・△のみ）
+            </label>
           </div>
-          <i className="fas fa-chevron-right text-slate-300 shrink-0"></i>
-        </button>
-
-        <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200 px-3 py-2.5 sm:px-4 sm:py-3 shadow-sm">
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showNeedsInputOnly}
-              onChange={(e) => setShowNeedsInputOnly(e.target.checked)}
-              className="mt-0.5 w-5 h-5 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 shrink-0"
-            />
-            <span className="min-w-0">
-              <span className="block text-sm font-black text-slate-800">表示切替</span>
-              <span className="block text-[11px] sm:text-xs text-slate-600 font-bold mt-0.5 leading-snug">
-                {showNeedsInputOnly
-                  ? '入力が必要な日のみ表示中（未入力・△のみ表示中）'
-                  : 'すべての日を表示中'}
-              </span>
-            </span>
-          </label>
         </div>
 
         <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-slate-200 divide-y divide-slate-100 overflow-hidden min-h-[200px] relative">
-          {isLoading && !hasSeed && (
-            <div className="absolute inset-0 bg-white/60 flex items-center justify-center z-10">
-              <i className="fas fa-spinner fa-spin text-indigo-600 text-2xl"></i>
+          {isLoading && (
+            <div className="absolute inset-0 bg-white/50 z-10 flex items-center justify-center">
+              <i className="fas fa-sync fa-spin text-indigo-500 text-xl"></i>
+            </div>
+          )}
+          {hasLodging && (
+            <div className="px-3 py-2 sm:px-4 bg-yellow-50 text-[11px] sm:text-xs font-bold text-yellow-900 border-b border-yellow-100">
+              右の「宿泊」にチェックした日が寮に泊まる日です（入寮日も含みます）。一覧では黄色いセルになります。
             </div>
           )}
           {canEdit &&
             visibleDates.map((dateStr) => {
-            const { label } = formatDateLabel(dateStr);
-            const status = localSchedules[dateStr] || '-';
-            const isChanged = (initialSchedules[dateStr] || '-') !== status;
-            const tone = getDayTone(dateStr, config.holidays || []);
+              const { label } = formatDateLabel(dateStr);
+              const draft = dayOf(localSchedules, dateStr);
+              const initial = dayOf(initialSchedules, dateStr);
+              const isChanged =
+                draft.status !== initial.status ||
+                (hasLodging && draft.lodgingOvernight !== initial.lodgingOvernight);
+              const tone = getDayTone(dateStr, config.holidays || []);
 
-            return (
-              <div key={dateStr} className={`px-3 py-2.5 sm:p-6 transition-colors ${isChanged ? 'bg-indigo-50/30' : ''} ${tone === 'holiday' ? 'bg-rose-50/10' : tone === 'saturday' ? 'bg-blue-50/10' : ''}`}>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
-                  <div className="flex items-center space-x-2 sm:space-x-3">
-                    <span className={`text-sm sm:text-base font-black ${dayToneTextClass(tone)}`}>
-                      {label}
-                    </span>
-                    {isChanged && <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-black rounded-full uppercase tracking-tighter shadow-sm">変更あり</span>}
-                  </div>
-
-                  {hasLodgingOpts ? (
-                    <div className="w-full sm:max-w-xl sm:ml-auto grid grid-cols-3 gap-1.5 sm:gap-2">
-                      {LODGING_STATUS_COLUMNS.map((col) => (
-                        <div
-                          key={col.title}
-                          className="min-w-0 rounded-lg border border-slate-100 bg-slate-50/60 p-1 sm:p-1.5 flex flex-col gap-1"
-                        >
-                          <p className="text-[9px] sm:text-[10px] font-black text-slate-500 text-center leading-tight px-0.5">
-                            {col.title}
-                          </p>
-                          <div
-                            className={
-                              col.statuses.length <= 1
-                                ? 'grid grid-cols-1 gap-1'
-                                : col.title === '勤務あり'
-                                  ? 'grid grid-cols-3 gap-1'
-                                  : 'grid grid-cols-2 gap-1'
-                            }
-                          >
-                            {col.statuses.map((opt) => renderStatusButton(dateStr, opt, status))}
-                          </div>
-                        </div>
-                      ))}
+              return (
+                <div
+                  key={dateStr}
+                  className={`px-3 py-2.5 sm:px-4 sm:py-3 transition-colors ${
+                    isChanged ? 'bg-indigo-50/30' : ''
+                  } ${
+                    tone === 'holiday'
+                      ? 'bg-rose-50/10'
+                      : tone === 'saturday'
+                        ? 'bg-blue-50/10'
+                        : ''
+                  }`}
+                >
+                  <div
+                    className={`grid gap-2 sm:gap-3 items-center ${
+                      hasLodging
+                        ? 'grid-cols-[5.5rem_minmax(0,1fr)_3.25rem] sm:grid-cols-[6.5rem_minmax(0,1fr)_4rem]'
+                        : 'grid-cols-[5.5rem_minmax(0,1fr)] sm:grid-cols-[6.5rem_minmax(0,1fr)]'
+                    }`}
+                  >
+                    <div className="flex flex-col gap-1 min-w-0">
+                      <span className={`text-sm sm:text-base font-black ${dayToneTextClass(tone)}`}>
+                        {label}
+                      </span>
+                      {isChanged && (
+                        <span className="w-fit px-1.5 py-0.5 bg-indigo-100 text-indigo-700 text-[9px] font-black rounded-full uppercase tracking-tighter">
+                          変更
+                        </span>
+                      )}
                     </div>
-                  ) : (
+
                     <div className={optionsWrapClass}>
-                      {statusOptions.map((opt) => renderStatusButton(dateStr, opt, status))}
+                      {statusOptions.map((opt) =>
+                        renderStatusButton(dateStr, opt, draft.status)
+                      )}
                     </div>
-                  )}
+
+                    {hasLodging && (
+                      <label
+                        className={`flex flex-col items-center justify-center gap-1 rounded-xl border-2 px-1 py-2 cursor-pointer select-none ${
+                          draft.lodgingOvernight
+                            ? 'border-yellow-300 bg-yellow-100/75 text-yellow-900'
+                            : 'border-slate-100 bg-white text-slate-400'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 rounded border-slate-300 text-yellow-600 focus:ring-yellow-200"
+                          checked={draft.lodgingOvernight}
+                          onChange={(e) =>
+                            patchDay(dateStr, { lodgingOvernight: e.target.checked })
+                          }
+                          aria-label={`${label} の宿泊`}
+                        />
+                        <span className="text-[10px] font-black leading-none">宿泊</span>
+                      </label>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
           {!isLoading && datesInRange.length === 0 && (
             <div className="p-12 text-center text-slate-400">
               設定された期間がありません。管理者に確認してください。
@@ -413,7 +441,9 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
           {!isLoading && datesInRange.length > 0 && visibleDates.length === 0 && (
             <div className="p-12 text-center text-slate-400 font-bold space-y-2">
               <p>入力が必要な日はありません</p>
-              <p className="text-xs font-medium text-slate-400">全部表示する場合は上のチェックを外してください</p>
+              <p className="text-xs font-medium text-slate-400">
+                全部表示する場合は上のチェックを外してください
+              </p>
             </div>
           )}
         </div>
@@ -427,8 +457,12 @@ const EditSchedule: React.FC<EditScheduleProps> = ({
             <li>日程ごとに記号ボタンをタップして予定を選択してください。</li>
             <li>「表示切替」で未入力・△に絞れます（変更中の日は登録まで残ります）。</li>
             <li>「未入力」を選ぶと、予定がまだ決まっていない状態になります。</li>
+            {hasLodging && (
+              <li>
+                寮グループでは右の「宿泊」チェックで泊まる日を指定します（入寮日もチェック）。
+              </li>
+            )}
             <li>入力を終えたら、画面上部の「登録する」ボタンを必ず押して保存してください。</li>
-            <li>寮グループでは 〇in／×in／〇out／×out も選べます（午前だけ退寮など細部は備考へ）。</li>
             <li>記号で表せない連絡は、上の「備考を書く」から入力できます（予定の保存とは別です）。</li>
           </ul>
         </div>

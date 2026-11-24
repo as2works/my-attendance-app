@@ -113,7 +113,10 @@ export function userMatchesQuery(
 export interface Schedule {
   userId: string;
   date: string; // ISO format YYYY-MM-DD
+  /** 出勤記号（〇×△AM PM 未入力）。寮 in/out 複合は保存しない */
   status: AttendanceStatus;
+  /** 寮グループ: その日宿泊するか。自宅グループでは未使用 */
+  lodgingOvernight?: boolean;
 }
 
 export interface History {

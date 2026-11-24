@@ -43,18 +43,15 @@ const DEFAULT_WORKSPACE_ID = 'default';
 const PORTAL_CONFIG_ID = '_portal';
 const DEFAULT_GROUP_IDS = { DORM: 'dorm', HOME: 'home' } as const;
 const BASE_STATUSES = new Set(['〇', '×', '△', 'AM', 'PM', '-']);
-const LODGING_STATUSES = new Set([
-  '〇',
-  '×',
-  '△',
-  'AM',
-  'PM',
-  '〇in',
-  '×in',
-  '〇out',
-  '×out',
-  '-',
-]);
+/** 読み取り時のみ許容（保存時は BASE に正規化） */
+const LEGACY_COMPOUND_STATUSES: Record<string, { status: string; lodgingOvernight: boolean }> = {
+  '〇in': { status: '〇', lodgingOvernight: true },
+  '×in': { status: '×', lodgingOvernight: true },
+  '〇out': { status: '〇', lodgingOvernight: false },
+  '×out': { status: '×', lodgingOvernight: false },
+  in: { status: '-', lodgingOvernight: true },
+  out: { status: '-', lodgingOvernight: false },
+};
 const USER_NOTE_MAX_LENGTH = 300;
 const WORKSPACE_NOTE_MAX_LENGTH = 300;
 
@@ -184,8 +181,35 @@ async function assertGroupInWorkspace(groupId: string, workspaceId: string): Pro
   return group;
 }
 
-function isStatusAllowed(group: GroupRecord, status: string) {
-  return (group.hasLodgingStatuses ? LODGING_STATUSES : BASE_STATUSES).has(status);
+function isStatusAllowed(_group: GroupRecord, status: string) {
+  return BASE_STATUSES.has(status) || status in LEGACY_COMPOUND_STATUSES;
+}
+
+function normalizeScheduleFields(
+  statusRaw: string | null | undefined,
+  lodgingRaw: boolean | null | undefined,
+  legacyOvernightWork: boolean
+): { status: string; lodgingOvernight: boolean } {
+  const raw = (statusRaw || '-').trim() || '-';
+  const compound = LEGACY_COMPOUND_STATUSES[raw];
+  let status = compound ? compound.status : BASE_STATUSES.has(raw) ? raw : '-';
+  if (typeof lodgingRaw === 'boolean') {
+    return { status, lodgingOvernight: lodgingRaw };
+  }
+  if (compound) {
+    return { status: compound.status, lodgingOvernight: compound.lodgingOvernight };
+  }
+  if (legacyOvernightWork && (status === '〇' || status === 'AM' || status === 'PM')) {
+    return { status, lodgingOvernight: true };
+  }
+  return { status, lodgingOvernight: false };
+}
+
+function toStoredScheduleFields(
+  statusRaw: string,
+  lodgingOvernight?: boolean | null
+): { status: string; lodgingOvernight: boolean } {
+  return normalizeScheduleFields(statusRaw, lodgingOvernight, false);
 }
 
 function monthBounds(year: number, month: number) {
@@ -240,18 +264,33 @@ async function mapPoolConcurrent<T, R>(
   return results;
 }
 
-type ScheduleRow = { userId: string; date: string; status: string };
+type ScheduleRow = {
+  userId: string;
+  date: string;
+  status: string;
+  lodgingOvernight: boolean;
+};
 
 function mapScheduleRows(
-  data: Array<{ userId?: string | null; date?: string | null; status?: string | null }>
+  data: Array<{
+    userId?: string | null;
+    date?: string | null;
+    status?: string | null;
+    lodgingOvernight?: boolean | null;
+  }>,
+  legacyOvernightWork = false
 ): ScheduleRow[] {
   return data
     .filter((s) => s.userId && s.date && s.status != null)
-    .map((s) => ({
-      userId: s.userId as string,
-      date: s.date as string,
-      status: s.status as string,
-    }));
+    .map((s) => {
+      const n = normalizeScheduleFields(s.status, s.lodgingOvernight, legacyOvernightWork);
+      return {
+        userId: s.userId as string,
+        date: s.date as string,
+        status: n.status,
+        lodgingOvernight: n.lodgingOvernight,
+      };
+    });
 }
 
 /**
@@ -261,7 +300,8 @@ function mapScheduleRows(
  */
 async function listSchedulesForUserQuery(
   userId: string,
-  dateRange?: { from: string; to: string } | null
+  dateRange?: { from: string; to: string } | null,
+  legacyOvernightWork = false
 ): Promise<ScheduleRow[]> {
   const listByPk = (opts: { withDate: boolean }) =>
     listAllByFilter((nextToken) =>
@@ -277,9 +317,9 @@ async function listSchedulesForUserQuery(
 
   try {
     if (dateRange) {
-      return mapScheduleRows(await listByPk({ withDate: true }));
+      return mapScheduleRows(await listByPk({ withDate: true }), legacyOvernightWork);
     }
-    return mapScheduleRows(await listByPk({ withDate: false }));
+    return mapScheduleRows(await listByPk({ withDate: false }), legacyOvernightWork);
   } catch (err) {
     if (!dateRange) {
       console.error('Schedule PK query failed', { userId, err });
@@ -287,7 +327,7 @@ async function listSchedulesForUserQuery(
     }
     console.error('Schedule PK+date query failed; retrying userId-only query', { userId, dateRange, err });
     try {
-      const all = mapScheduleRows(await listByPk({ withDate: false }));
+      const all = mapScheduleRows(await listByPk({ withDate: false }), legacyOvernightWork);
       return all.filter((s) => s.date >= dateRange.from && s.date <= dateRange.to);
     } catch (err2) {
       console.error('Schedule PK query retry failed', { userId, err2 });
@@ -299,23 +339,29 @@ async function listSchedulesForUserQuery(
 async function listSchedulesForUserIdsInRange(
   userIds: string[],
   from: string,
-  to: string
+  to: string,
+  legacyOvernightByUser?: Set<string> | boolean
 ): Promise<ScheduleRow[]> {
   if (!userIds.length) return [];
   if (from > to) return [];
-  const pages = await mapPoolConcurrent(userIds, 10, (userId) =>
-    listSchedulesForUserQuery(userId, { from, to })
-  );
+  const pages = await mapPoolConcurrent(userIds, 10, (userId) => {
+    const legacy =
+      typeof legacyOvernightByUser === 'boolean'
+        ? legacyOvernightByUser
+        : !!legacyOvernightByUser?.has(userId);
+    return listSchedulesForUserQuery(userId, { from, to }, legacy);
+  });
   return pages.flat();
 }
 
 async function listSchedulesForUserIdsInMonth(
   userIds: string[],
   year: number,
-  month: number
+  month: number,
+  legacyOvernightByUser?: Set<string> | boolean
 ): Promise<ScheduleRow[]> {
   const { start, end } = monthBounds(year, month);
-  return listSchedulesForUserIdsInRange(userIds, start, end);
+  return listSchedulesForUserIdsInRange(userIds, start, end, legacyOvernightByUser);
 }
 
 async function resolveSession(token?: string | null): Promise<Session> {
@@ -793,17 +839,33 @@ function assertNoAmplifyErrors(
   }
 }
 
-async function upsertScheduleRow(userId: string, date: string, status: string) {
+async function upsertScheduleRow(
+  userId: string,
+  date: string,
+  status: string,
+  lodgingOvernight?: boolean | null
+) {
+  const stored = toStoredScheduleFields(status, lodgingOvernight);
   const { data: existing, errors: getErrors } = await client.models.Schedule.get({
     userId,
     date,
   });
   assertNoAmplifyErrors(getErrors, 'schedule get failed');
   if (existing) {
-    const { errors } = await client.models.Schedule.update({ userId, date, status });
+    const { errors } = await client.models.Schedule.update({
+      userId,
+      date,
+      status: stored.status,
+      lodgingOvernight: stored.lodgingOvernight,
+    });
     assertNoAmplifyErrors(errors, 'schedule update failed');
   } else {
-    const { errors } = await client.models.Schedule.create({ userId, date, status });
+    const { errors } = await client.models.Schedule.create({
+      userId,
+      date,
+      status: stored.status,
+      lodgingOvernight: stored.lodgingOvernight,
+    });
     assertNoAmplifyErrors(errors, 'schedule create failed');
   }
 }
@@ -1032,10 +1094,12 @@ export const handler = async (event: { arguments: Args }) => {
           config.seasonStartDate,
           config.seasonEndDate
         );
+        const group = groups.find((g) => g.id === groupId);
         const schedules = await listSchedulesForUserIdsInMonth(
           users.map((u) => u.id),
           year,
-          month
+          month,
+          !!group?.hasLodgingStatuses
         );
         return ok({
           link: {
@@ -1071,6 +1135,7 @@ export const handler = async (event: { arguments: Args }) => {
         );
 
         const users = await getUsers(session, { groupId });
+        const bootGroup = groups.find((g) => g.id === groupId);
         const [historiesPage, schedules, unprocessedEntries] = await Promise.all([
           client.models.History.listHistoriesByGroup(
             { groupId },
@@ -1079,7 +1144,8 @@ export const handler = async (event: { arguments: Args }) => {
           listSchedulesForUserIdsInMonth(
             users.map((u) => u.id),
             year,
-            month
+            month,
+            !!bootGroup?.hasLodgingStatuses
           ),
           Promise.all(
             groups.map(async (g) => {
@@ -1423,17 +1489,32 @@ export const handler = async (event: { arguments: Args }) => {
           ? [...new Set((payload.userIds as string[]).filter((id) => typeof id === 'string' && id))]
           : [];
         let userIds: string[];
+        let legacyOvernight: Set<string> | boolean = false;
         if (payload?.allGroups) {
           requireAdmin(session);
           const workspaceId = requireWorkspaceSession(session);
+          const allUsers = await getUsers(session, { allGroups: true });
+          const lodgingGroupIds = new Set(
+            (await listGroupsInWorkspace(workspaceId))
+              .filter((g) => g.hasLodgingStatuses)
+              .map((g) => g.id)
+          );
+          legacyOvernight = new Set(
+            allUsers.filter((u) => lodgingGroupIds.has(u.groupId)).map((u) => u.id)
+          );
           if (requested.length) {
             await Promise.all(requested.map((id) => assertUserInWorkspace(id, workspaceId)));
             userIds = requested;
           } else {
-            userIds = (await getUsers(session, { allGroups: true })).map((u) => u.id);
+            userIds = allUsers.map((u) => u.id);
           }
         } else {
           const groupId = await effectiveGroupId(session, payload.groupId);
+          const group = await assertGroupInWorkspace(
+            groupId,
+            requireWorkspaceSession(session)
+          );
+          legacyOvernight = !!group.hasLodgingStatuses;
           if (requested.length) {
             // クライアントが渡した ID を信頼せず所属確認のみ（全件 getUsers はしない）
             await Promise.all(requested.map((id) => assertUserInGroup(id, groupId)));
@@ -1451,18 +1532,25 @@ export const handler = async (event: { arguments: Args }) => {
             ? payload.dateTo
             : null;
         if (dateFrom && dateTo) {
-          return ok(await listSchedulesForUserIdsInRange(userIds, dateFrom, dateTo));
+          return ok(
+            await listSchedulesForUserIdsInRange(userIds, dateFrom, dateTo, legacyOvernight)
+          );
         }
         return ok(
           await listSchedulesForUserIdsInMonth(
             userIds,
             Number(payload.year),
-            Number(payload.month)
+            Number(payload.month),
+            legacyOvernight
           )
         );
       }
       case 'getSchedulesForUser': {
         const groupId = await effectiveGroupId(session, payload.groupId);
+        const group = await assertGroupInWorkspace(
+          groupId,
+          requireWorkspaceSession(session)
+        );
         await assertUserInGroup(payload.userId, groupId);
         const dateFrom =
           typeof payload.dateFrom === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(payload.dateFrom)
@@ -1474,14 +1562,25 @@ export const handler = async (event: { arguments: Args }) => {
             : null;
         const range =
           dateFrom && dateTo ? { from: dateFrom, to: dateTo } : null;
-        return ok(await listSchedulesForUserQuery(payload.userId, range));
+        return ok(
+          await listSchedulesForUserQuery(
+            payload.userId,
+            range,
+            !!group.hasLodgingStatuses
+          )
+        );
       }
       case 'updateSchedules': {
         const workspaceId = requireWorkspaceSession(session);
         const groupId = await effectiveGroupId(session, payload.groupId);
         const group = await assertGroupInWorkspace(groupId, workspaceId);
         const updates =
-          (payload.updates as Array<{ userId: string; date: string; status: string }>) || [];
+          (payload.updates as Array<{
+            userId: string;
+            date: string;
+            status: string;
+            lodgingOvernight?: boolean;
+          }>) || [];
         const userIds = [...new Set(updates.map((u) => u.userId))];
         for (const userId of userIds) {
           await assertUserInGroup(userId, groupId);
@@ -1495,7 +1594,14 @@ export const handler = async (event: { arguments: Args }) => {
         for (let i = 0; i < updates.length; i += chunkSize) {
           const chunk = updates.slice(i, i + chunkSize);
           await Promise.all(
-            chunk.map((update) => upsertScheduleRow(update.userId, update.date, update.status))
+            chunk.map((update) =>
+              upsertScheduleRow(
+                update.userId,
+                update.date,
+                update.status,
+                group.hasLodgingStatuses ? !!update.lodgingOvernight : false
+              )
+            )
           );
         }
         return ok(true);
@@ -1507,7 +1613,11 @@ export const handler = async (event: { arguments: Args }) => {
         const userId = requireId(payload.userId, 'userId');
         await assertUserInGroup(userId, groupId);
         const updates =
-          (payload.updates as Array<{ date: string; status: string }>) || [];
+          (payload.updates as Array<{
+            date: string;
+            status: string;
+            lodgingOvernight?: boolean;
+          }>) || [];
         for (const update of updates) {
           if (!isStatusAllowed(group, update.status)) {
             fail('INVALID_STATUS', update.status);
@@ -1517,7 +1627,14 @@ export const handler = async (event: { arguments: Args }) => {
         for (let i = 0; i < updates.length; i += chunkSize) {
           const chunk = updates.slice(i, i + chunkSize);
           await Promise.all(
-            chunk.map((update) => upsertScheduleRow(userId, update.date, update.status))
+            chunk.map((update) =>
+              upsertScheduleRow(
+                userId,
+                update.date,
+                update.status,
+                group.hasLodgingStatuses ? !!update.lodgingOvernight : false
+              )
+            )
           );
         }
         const message =

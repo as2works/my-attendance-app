@@ -114,7 +114,7 @@ export const AdminManualDaily: React.FC = () => (
           <WarnBox>
             「一般画面へ」でも「全員」の選択は引き継がれます。そのまま編集して登録できます。
             <br />
-            予定の記号ルールは、その人の所属グループに従います（寮の 〇in／×out など）。
+            寮グループでは出勤記号に加え、宿泊チェックも入力できます。
           </WarnBox>
         </div>
       </StepCard>
@@ -128,14 +128,14 @@ export const AdminManualDaily: React.FC = () => (
             ・マスが<strong className="text-slate-900">空</strong>
             … まだ予定が入っていない（未入力）
           </li>
-          <li>・〇／×／△／AM／PM／〇in／×in／〇out／×out … その日の登録内容</li>
+          <li>・〇／×／△／AM／PM … その日の出勤予定（管理者一覧では宿泊は出さない）</li>
           <li>
             ・ヘッダー下の<strong className="text-slate-900">出勤人数</strong>
-            … 〇／AM／PM／〇in／〇out の合計。タイトルをクリックすると説明が出ます。数字にマウスを乗せると記号別内訳
+            … 〇／AM／PM の合計。タイトルをクリックすると説明が出ます。数字にマウスを乗せると記号別内訳
           </li>
           <li>
             ・寮グループではその下に<strong className="text-slate-900">宿泊人数</strong>
-            … 〇／AM／PM／〇in／×in（〇outは退寮日なので含めない）。「全員」では寮グループの人だけ合算
+            … その日の宿泊チェックがONの人数（入寮日含む）。「全員」では寮グループの人だけ合算
           </li>
           <li>
             ・日付（曜日・日）をクリックすると<strong className="text-slate-900">その日だけ</strong>
@@ -499,7 +499,7 @@ export const AdminManualCsv: React.FC = () => (
                   <td className="px-2.5 py-2">森　あかり</td>
                   <td className="px-2.5 py-2 text-violet-700">PM</td>
                   <td className="px-2.5 py-2 text-emerald-700">〇</td>
-                  <td className="px-2.5 py-2 text-amber-700">△</td>
+                  <td className="px-2.5 py-2 text-orange-800">△</td>
                 </tr>
               </tbody>
             </table>

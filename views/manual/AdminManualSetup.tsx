@@ -60,7 +60,7 @@ export const AdminManualSetup: React.FC = () => (
           n: 2,
           title: 'グループを整える',
           href: adminManualHref('groups'),
-          desc: '寮・日勤などのグループと、寮用記号（〇in／×out など）を用意する',
+          desc: '寮・日勤などのグループと、宿泊チェックの有無を用意する',
         },
         {
           n: 3,
@@ -256,7 +256,7 @@ export const AdminManualGroups: React.FC = () => (
     <DocGoals
       items={[
         'グループを追加・改名・並べ替えできる',
-        '寮用記号（〇in／×in／〇out／×out）のON/OFFを正しく付ける',
+        '宿泊チェック（寮グループ）のON/OFFを正しく付ける',
         '削除時の利用者移動とURL無効化を理解する',
         'CSV取込でできたグループは寮記号OFFだと知る',
       ]}
@@ -286,8 +286,8 @@ export const AdminManualGroups: React.FC = () => (
               body: '追加すると、そのグループ用の一般入場URLが自動作成されます。同じ名前は作れません。',
             },
             {
-              title: '寮で入退寮記号が必要なら「寮用記号あり」にチェック',
-              body: 'ONにすると、入力画面に 〇in／×in／〇out／×out が出ます。日勤など不要なグループはOFFのままにします。',
+              title: '寮なら「宿泊チェックあり」にチェック',
+              body: 'ONにすると、予定編集に宿泊チェックが出て、一覧で黄色いセルになります。日勤など不要なグループはOFFのままにします。',
             },
             {
               title: '既存グループは「編集」で名前・寮記号を変更',
@@ -303,27 +303,17 @@ export const AdminManualGroups: React.FC = () => (
 
       <StepCard>
         <h2 className="font-display text-xl font-extrabold text-slate-900 sm:text-2xl">
-          寮の入退寮記号の意味
+          寮の宿泊チェック
         </h2>
-        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 text-sm font-medium leading-relaxed text-slate-700 space-y-2">
+        <div className="mt-4 rounded-2xl border border-yellow-200 bg-yellow-50 p-4 text-sm font-medium leading-relaxed text-slate-700 space-y-2">
           <p>
-            <strong className="text-emerald-800">〇in</strong>
-            … 入寮し、その日は勤務あり（〇と同じ緑）
+            出勤記号（〇×△など）とは別に、泊まる日は「宿泊」チェックで管理します（入寮日もON）。
           </p>
           <p>
-            <strong className="text-slate-700">×in</strong>
-            … 入寮するが、その日は仕事をしない（×と同じ灰）
-          </p>
-          <p>
-            <strong className="text-emerald-800">〇out</strong>
-            … 出勤したうえで退寮する（〇と同じ緑）
-          </p>
-          <p>
-            <strong className="text-slate-700">×out</strong>
-            … 出勤せずに退寮する（×と同じ灰）
+            一般一覧では黄色いセルになり、前後日の差から 〇in／〇out のように見えることがあります。管理者の全体一覧とCSVには宿泊は出しません。
           </p>
           <p className="font-bold text-slate-900">
-            午前だけ退寮など細かいケースは備考欄で扱います（専用ボタンは用意しません）。
+            午前だけ退寮など細かいケースは備考欄で扱います。
           </p>
         </div>
       </StepCard>
@@ -348,7 +338,7 @@ export const AdminManualGroups: React.FC = () => (
           <WarnBox>
             最後の1グループは削除できません。
             <br />
-            CSV取込で新しくできたグループは、寮用記号がOFFのことがあります。寮ならあとから編集でONにしてください。
+            CSV取込で新しくできたグループは、宿泊チェックがOFFのことがあります。寮ならあとから編集でONにしてください。
           </WarnBox>
         </div>
       </StepCard>
@@ -365,7 +355,7 @@ export const AdminManualGroups: React.FC = () => (
     <CheckList
       items={[
         '必要なグループがある',
-        '寮グループに寮用記号が付いている',
+        '寮グループに宿泊チェックが付いている',
         '不要グループの削除影響を理解した',
         '次は利用者登録へ進む',
       ]}
@@ -459,7 +449,7 @@ export const AdminManualUsers: React.FC = () => (
           <li>・空行や列数が合わない行はスキップされます</li>
           <li>・まったく同じ行の重複はまとめられます</li>
           <li>・同じIDなのに中身が違う行が混ざると、そのCSVは取り込めません（作り直してください）</li>
-          <li>・取込で新しく作られたグループは、寮用記号がOFFのことがあります → グループ画面で直す</li>
+          <li>・取込で新しく作られたグループは、宿泊チェックがOFFのことがあります → グループ画面で直す</li>
         </ul>
         <div className="mt-6">
           <AdminUsersScreenMock highlightCsv />

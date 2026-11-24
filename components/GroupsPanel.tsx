@@ -145,7 +145,7 @@ const GroupsPanel: React.FC<GroupsPanelProps> = ({ groups, onGroupsChange }) => 
             onChange={(e) => setHasLodging(e.target.checked)}
             className="w-5 h-5 rounded text-indigo-600"
           />
-          寮用記号あり（入寮・退寮）
+          宿泊チェックあり（寮）
         </label>
         <button
           type="submit"
@@ -174,7 +174,7 @@ const GroupsPanel: React.FC<GroupsPanelProps> = ({ groups, onGroupsChange }) => 
                     onChange={(e) => setEditLodging(e.target.checked)}
                     className="w-5 h-5 rounded text-indigo-600"
                   />
-                  寮用記号あり（入寮・退寮）
+                  宿泊チェックあり（寮）
                 </label>
                 <div className="flex gap-2">
                   <button type="button" onClick={() => setEditingId(null)} className="flex-1 py-2 rounded-xl bg-slate-100 font-bold">
@@ -190,7 +190,7 @@ const GroupsPanel: React.FC<GroupsPanelProps> = ({ groups, onGroupsChange }) => 
                 <div>
                   <div className="font-black text-slate-800 text-lg">{g.name}</div>
                   <div className="text-xs font-bold text-slate-400 mt-0.5">
-                    {g.hasLodgingStatuses ? '寮用記号あり' : '通常記号のみ'}
+                    {g.hasLodgingStatuses ? '宿泊チェックあり' : '出勤記号のみ'}
                   </div>
                 </div>
                 <div className="flex items-center gap-1 flex-wrap">

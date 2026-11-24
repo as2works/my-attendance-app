@@ -24,7 +24,14 @@ import {
   getStatusOptions,
   statusGlyphClass,
   statusColorClass,
+  LODGING_OVERNIGHT_CELL_CLASS,
 } from '../constants';
+import {
+  displayScheduleGlyph,
+  lodgingEdge,
+  normalizeScheduleFields,
+  prevDateKey,
+} from '../services/lodgingSchedule';
 import {
   toDateKey,
   getDayTone,
@@ -158,7 +165,7 @@ const MainList: React.FC<MainListProps> = ({
       }
       for (const row of schedulePatch) {
         const key = `${row.userId}|${row.date}`;
-        if (row.status === '-') {
+        if (row.status === '-' && !row.lodgingOvernight) {
           map.delete(key);
         } else {
           map.set(key, row);
@@ -195,10 +202,21 @@ const MainList: React.FC<MainListProps> = ({
     config.seasonStartDate,
     config.seasonEndDate
   );
-  const legendGroup = isAllMode
-    ? groups.find((g) => g.hasLodgingStatuses) || groups[0]
-    : currentGroup;
-  const legendStatuses = getStatusOptions(legendGroup).filter((s) => s !== '-');
+  const lodgingGroupIds = useMemo(
+    () => new Set(groups.filter((g) => g.hasLodgingStatuses).map((g) => g.id)),
+    [groups]
+  );
+  const showLodgingLegend = isAllMode
+    ? lodgingGroupIds.size > 0
+    : !!currentGroup?.hasLodgingStatuses;
+  const legendStatuses = getStatusOptions().filter((s) => s !== '-');
+  const scheduleByUserDate = useMemo(() => {
+    const map = new Map<string, Schedule>();
+    for (const s of schedules) {
+      map.set(`${s.userId}|${s.date}`, s);
+    }
+    return map;
+  }, [schedules]);
   const canGoPrev = monthIntersectsSeason(
     currentMonth === 0 ? currentYear - 1 : currentYear,
     currentMonth === 0 ? 11 : currentMonth - 1,
@@ -212,9 +230,12 @@ const MainList: React.FC<MainListProps> = ({
     config.seasonEndDate
   );
 
-  const getStatus = (userId: string, day: number): AttendanceStatus => {
-    const dateStr = toDateKey(currentYear, currentMonth, day);
-    return schedules.find(s => s.userId === userId && s.date === dateStr)?.status || '-';
+  const getDaySchedule = (userId: string, dateStr: string, userGroupId: string) => {
+    const row = scheduleByUserDate.get(`${userId}|${dateStr}`);
+    const legacy = lodgingGroupIds.has(userGroupId);
+    return normalizeScheduleFields(row?.status, row?.lodgingOvernight, {
+      legacyOvernightWork: legacy,
+    });
   };
 
   const handleMonthChange = (offset: number) => {
@@ -405,13 +426,40 @@ const MainList: React.FC<MainListProps> = ({
                       </button>
                     </td>
                   )}
-                  {days.map(day => {
-                    const status = getStatus(user.id, day);
-                    const tone = getDayTone(toDateKey(currentYear, currentMonth, day), config.holidays || []);
+                  {days.map((day) => {
+                    const dateStr = toDateKey(currentYear, currentMonth, day);
+                    const dayInfo = getDaySchedule(user.id, dateStr, user.groupId);
+                    const prevKey = prevDateKey(dateStr);
+                    const prevOvernight = prevKey
+                      ? getDaySchedule(user.id, prevKey, user.groupId).lodgingOvernight
+                      : false;
+                    const userHasLodging = lodgingGroupIds.has(user.groupId);
+                    const edge = userHasLodging
+                      ? lodgingEdge(dayInfo.lodgingOvernight, prevOvernight)
+                      : 'none';
+                    const glyph = userHasLodging
+                      ? displayScheduleGlyph(dayInfo.status, edge)
+                      : dayInfo.status === '-'
+                        ? ''
+                        : dayInfo.status;
+                    const tone = getDayTone(dateStr, config.holidays || []);
+                    const isOvernight =
+                      userHasLodging && dayInfo.lodgingOvernight;
                     return (
-                      <td key={day} className={`px-0.5 sm:px-1 py-1 sm:py-3 text-center border-b border-r border-slate-100 last:border-r-0 ${dayToneCellClass(tone)} ${isToday(day) ? 'bg-indigo-50/50' : ''}`}>
-                        <div className={`${statusGlyphClass(status)} mx-auto rounded-md sm:rounded-lg flex items-center justify-center border-2 font-black transition-all group-hover:scale-110 ${statusColorClass(status)}`}>
-                          {status === '-' ? '' : status}
+                      <td
+                        key={day}
+                        className={`px-0.5 sm:px-1 py-1 sm:py-3 text-center border-b border-r border-slate-100 last:border-r-0 ${
+                          isOvernight
+                            ? LODGING_OVERNIGHT_CELL_CLASS
+                            : `${dayToneCellClass(tone)} ${isToday(day) ? 'bg-indigo-50/50' : ''}`
+                        }`}
+                      >
+                        <div
+                          className={`${statusGlyphClass(glyph || '-')} mx-auto rounded-md sm:rounded-lg flex items-center justify-center border-2 font-black transition-all group-hover:scale-110 ${statusColorClass(
+                            glyph || dayInfo.status
+                          )}`}
+                        >
+                          {glyph}
                         </div>
                       </td>
                     );
@@ -455,7 +503,7 @@ const MainList: React.FC<MainListProps> = ({
 
       <div className="mt-3 sm:mt-6 bg-white px-2.5 py-2 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200 flex flex-wrap gap-x-2.5 gap-y-1.5 sm:gap-4 items-center text-[10px] sm:text-xs text-slate-500 shadow-sm">
         <span className="font-bold text-slate-600 border-b border-indigo-400 pb-0.5">凡例</span>
-        {legendStatuses.map(status => (
+        {legendStatuses.map((status) => (
           <div key={status} className="flex items-center gap-1 sm:gap-1.5">
             <span
               className={`rounded border flex items-center justify-center font-bold ${STATUS_COLORS[status]} ${
@@ -469,6 +517,14 @@ const MainList: React.FC<MainListProps> = ({
             <span className="leading-none">{STATUS_LABELS[status]}</span>
           </div>
         ))}
+        {showLodgingLegend && (
+          <div className="flex items-center gap-1 sm:gap-1.5">
+            <span
+              className={`h-5 w-5 rounded border border-yellow-200 ${LODGING_OVERNIGHT_CELL_CLASS}`}
+            />
+            <span className="leading-none">宿泊（入寮日含む。〇in／〇out は前後日から表示）</span>
+          </div>
+        )}
       </div>
 
       {noteUser && (

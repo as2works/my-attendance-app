@@ -1,11 +1,11 @@
 
 import { AttendanceStatus, Group } from './types';
 
-/** 〇系は緑、×系は灰で揃える（in/out も同じ色） */
+/** 〇系は緑、×系は灰で揃える（一覧の導出 in/out 表示用も含む） */
 export const STATUS_COLORS: Record<AttendanceStatus, string> = {
   '〇': 'bg-emerald-100 text-emerald-700 border-emerald-200',
   '×': 'bg-slate-200 text-slate-700 border-slate-300',
-  '△': 'bg-amber-100 text-amber-700 border-amber-200',
+  '△': 'bg-orange-100 text-orange-800 border-orange-200',
   'AM': 'bg-sky-100 text-sky-700 border-sky-200',
   'PM': 'bg-violet-100 text-violet-700 border-violet-200',
   '〇in': 'bg-emerald-100 text-emerald-700 border-emerald-200',
@@ -28,36 +28,18 @@ export const STATUS_LABELS: Record<AttendanceStatus, string> = {
   '-': '未設定',
 };
 
-const SHARED_STATUSES: AttendanceStatus[] = ['〇', '×', '△', 'AM', 'PM', '-'];
+/** 入力・保存用（全グループ共通）。寮宿泊は lodgingOvernight で別管理 */
+const WORK_INPUT_STATUSES: AttendanceStatus[] = ['〇', '×', '△', 'AM', 'PM', '-'];
 
-/** 寮グループの予定編集：列カテゴリ（お試しレイアウト） */
-export const LODGING_STATUS_COLUMNS: ReadonlyArray<{
-  title: string;
-  statuses: readonly AttendanceStatus[];
-}> = [
-  { title: '入寮のみ', statuses: ['×in'] },
-  { title: '勤務あり', statuses: ['〇in', '〇', '〇out', 'AM', 'PM'] },
-  { title: '勤務無し、未定', statuses: ['×', '×out', '△', '-'] },
-];
-
-/** 寮: 編集UIの列順に合わせたフラット配列（凡例・許可リスト用） */
-const LODGING_STATUSES: AttendanceStatus[] = LODGING_STATUS_COLUMNS.flatMap((c) => [
-  ...c.statuses,
-]);
-
-export function getStatusOptions(groupOrFlag: Group | boolean | undefined): AttendanceStatus[] {
-  const hasLodging =
-    typeof groupOrFlag === 'boolean'
-      ? groupOrFlag
-      : !!groupOrFlag?.hasLodgingStatuses;
-  return hasLodging ? LODGING_STATUSES : SHARED_STATUSES;
+export function getStatusOptions(_groupOrFlag?: Group | boolean | undefined): AttendanceStatus[] {
+  return WORK_INPUT_STATUSES;
 }
 
 export function isStatusAllowed(
-  groupOrFlag: Group | boolean | undefined,
+  _groupOrFlag: Group | boolean | undefined,
   status: AttendanceStatus
 ): boolean {
-  return getStatusOptions(groupOrFlag).includes(status);
+  return WORK_INPUT_STATUSES.includes(status);
 }
 
 /** 一覧セル用。スマホは行高を抑える。3文字記号は少し小さく・広めに */
@@ -74,13 +56,26 @@ const LEGACY_STATUS_COLORS: Record<string, string> = {
   out: 'bg-slate-200 text-slate-700 border-slate-300',
 };
 
+/** AMin / AM out / △out など導出表示は、元の出勤記号の色を使う */
+function colorKeyForStatus(status: string): string {
+  if (STATUS_COLORS[status as AttendanceStatus]) return status;
+  if (LEGACY_STATUS_COLORS[status]) return status;
+  const m = /^(〇|×|△|AM|PM)\s?(in|out)$/.exec(status);
+  if (m) return m[1];
+  return status;
+}
+
 export function statusColorClass(status: string): string {
+  const key = colorKeyForStatus(status);
   return (
-    STATUS_COLORS[status as AttendanceStatus] ||
-    LEGACY_STATUS_COLORS[status] ||
+    STATUS_COLORS[key as AttendanceStatus] ||
+    LEGACY_STATUS_COLORS[key] ||
     STATUS_COLORS['-']
   );
 }
 
-export const ADMIN_PASSWORD = 'admin';
-export const SHARED_USER_PASSWORD = '932';
+/**
+ * 寮グループ一覧: 宿泊日のセル背景（土日・祝の青赤より優先）。
+ * △記号は orange、宿泊背景は lemon 寄りの yellow で分離する。
+ */
+export const LODGING_OVERNIGHT_CELL_CLASS = 'bg-yellow-100/75';

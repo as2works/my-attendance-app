@@ -3,7 +3,7 @@ import React from 'react';
 const STATUS_CELL: Record<string, string> = {
   '〇': 'bg-emerald-100 text-emerald-700 border-emerald-200',
   '×': 'bg-slate-200 text-slate-700 border-slate-300',
-  '△': 'bg-amber-100 text-amber-700 border-amber-200',
+  '△': 'bg-orange-100 text-orange-800 border-orange-200',
   AM: 'bg-sky-100 text-sky-700 border-sky-200',
   PM: 'bg-violet-100 text-violet-700 border-violet-200',
   '〇in': 'bg-emerald-100 text-emerald-700 border-emerald-200',

@@ -3,7 +3,7 @@ import React from 'react';
 const STATUS_CELL: Record<string, string> = {
   '〇': 'bg-emerald-100 text-emerald-700 border-emerald-200',
   '×': 'bg-slate-200 text-slate-700 border-slate-300',
-  '△': 'bg-amber-100 text-amber-700 border-amber-200',
+  '△': 'bg-orange-100 text-orange-800 border-orange-200',
   AM: 'bg-sky-100 text-sky-700 border-sky-200',
   PM: 'bg-violet-100 text-violet-700 border-violet-200',
   '〇in': 'bg-emerald-100 text-emerald-700 border-emerald-200',
@@ -13,11 +13,7 @@ const STATUS_CELL: Record<string, string> = {
   '': 'bg-white border-slate-100',
 };
 
-const EDIT_LODGING_COLS = [
-  { title: '入寮のみ', opts: ['×in'] as const },
-  { title: '勤務あり', opts: ['〇in', '〇', '〇out', 'AM', 'PM'] as const },
-  { title: '勤務無し、未定', opts: ['×', '×out', '△', '未入力'] as const },
-] as const;
+const EDIT_WORK_OPTS = ['〇', '×', '△', 'AM', 'PM', '未入力'] as const;
 
 /** 一般の出勤予定一覧（実画面に近い） */
 export const MainListScreenMock: React.FC<{
@@ -287,47 +283,39 @@ export const EditScheduleScreenMock: React.FC<{
                 </span>
               )}
             </div>
-            <div className="grid grid-cols-3 gap-1">
-              {EDIT_LODGING_COLS.map((col) => (
-                <div
-                  key={col.title}
-                  className="min-w-0 rounded-lg border border-slate-100 bg-slate-50/60 p-1 flex flex-col gap-1"
-                >
-                  <p className="text-[8px] font-black text-slate-500 text-center leading-tight">
-                    {col.title}
-                  </p>
-                  <div
-                    className={
-                      col.opts.length <= 1
-                        ? 'grid grid-cols-1 gap-1'
-                        : col.title === '勤務あり'
-                          ? 'grid grid-cols-3 gap-1'
-                          : 'grid grid-cols-2 gap-1'
-                    }
+            <div className="grid grid-cols-[minmax(0,1fr)_2.75rem] gap-1.5 items-start">
+              <div className="grid grid-cols-3 gap-1">
+                {EDIT_WORK_OPTS.map((s) => (
+                  <span
+                    key={s}
+                    className={`flex h-7 w-full items-center justify-center rounded-md border-2 px-0.5 text-[9px] font-black ${
+                      s === row.status
+                        ? s === '〇'
+                          ? 'border-indigo-400 bg-emerald-100 text-emerald-700 ring-1 ring-indigo-400'
+                          : s === '×'
+                            ? 'border-indigo-400 bg-slate-200 text-slate-700 ring-1 ring-indigo-400'
+                            : 'border-indigo-400 bg-indigo-50 text-indigo-600 ring-1 ring-indigo-400'
+                        : 'border-slate-100 bg-white text-slate-300'
+                    }`}
                   >
-                    {col.opts.map((s) => (
-                      <span
-                        key={s}
-                        className={`flex h-7 w-full items-center justify-center rounded-md border-2 px-0.5 text-[9px] font-black ${
-                          s === row.status
-                            ? s === '〇' || s === '〇in' || s === '〇out'
-                              ? 'border-indigo-400 bg-emerald-100 text-emerald-700 ring-1 ring-indigo-400'
-                              : s === '×' || s === '×in' || s === '×out'
-                                ? 'border-indigo-400 bg-slate-200 text-slate-700 ring-1 ring-indigo-400'
-                                : 'border-indigo-400 bg-indigo-50 text-indigo-600 ring-1 ring-indigo-400'
-                            : 'border-slate-100 bg-white text-slate-300'
-                        }`}
-                      >
-                        {s === '未入力' ? (
-                          <span className="text-[7px] leading-none">未入力</span>
-                        ) : (
-                          s
-                        )}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
+                    {s === '未入力' ? (
+                      <span className="text-[7px] leading-none">未入力</span>
+                    ) : (
+                      s
+                    )}
+                  </span>
+                ))}
+              </div>
+              <span
+                className={`flex flex-col items-center justify-center gap-0.5 rounded-lg border-2 px-0.5 py-1 text-[8px] font-black ${
+                  row.status === '〇' || row.status === '×'
+                    ? 'border-yellow-300 bg-yellow-100/75 text-yellow-900'
+                    : 'border-slate-100 bg-white text-slate-300'
+                }`}
+              >
+                <span className="h-3 w-3 rounded border border-current" />
+                宿泊
+              </span>
             </div>
           </div>
         ))}
